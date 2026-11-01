@@ -225,8 +225,12 @@ public sealed class AuthClient : IDisposable
                     return;
                 }
 
+                var who = root.TryGetProperty("character", out var c) && c.ValueKind == JsonValueKind.Object
+                    ? $"{c.GetProperty("name").GetString()}@{c.GetProperty("world").GetString()}"
+                    : "your character";
                 var reason = status switch
                 {
+                    "notapproved" => $"{who} isn't approved to deal yet. Ask the venue owner to approve it, then sign in again.",
                     "denied" => "The sign-in was cancelled on XIVAuth.",
                     "expired" => "The code expired before it was entered. Try again.",
                     "blocked" => "This character isn't allowed to use the plugin.",
@@ -256,7 +260,7 @@ public sealed class AuthClient : IDisposable
                 using var response = await Http.SendAsync(request).ConfigureAwait(false);
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
-                    Finish(() => ClearSession("Your sign-in ended (it expired or was revoked). Sign in again."));
+                    Finish(() => ClearSession("Your sign-in ended: it expired, was revoked, or your character isn't approved. Sign in again."));
                     return;
                 }
 

@@ -7,3 +7,6 @@ obj/
 
 # Local Claude Code settings
 .claude/
+
+# Zips to send to dealers
+dist/
