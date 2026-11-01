@@ -15,7 +15,8 @@ public sealed class TableView
 {
     private static readonly Vector2 SeatSize = new(150, 64);
     private static readonly Vector2 SmallCard = new(22, 30);
-    private static readonly Vector2 BoardCard = new(38, 52);
+    private static readonly Vector2 BoardCard = new(52, 72);
+    private const float BoardGap = 8;
 
     private static readonly uint Rail = Col(0.33f, 0.19f, 0.09f);
     private static readonly uint RailEdge = Col(0.2f, 0.11f, 0.05f);
@@ -129,13 +130,13 @@ public sealed class TableView
         var board = Table.Board;
         if (Table.HandInProgress || board.Count > 0)
         {
-            var total = (BoardCard.X * 5) + (6 * 4);
+            var total = (BoardCard.X * 5) + (BoardGap * 4);
             var x = center.X - (total / 2);
             for (var i = 0; i < 5; i++)
             {
-                var min = new Vector2(x + (i * (BoardCard.X + 6)), center.Y - (BoardCard.Y / 2) - 8);
+                var min = new Vector2(x + (i * (BoardCard.X + BoardGap)), center.Y - (BoardCard.Y / 2) - 8);
                 if (i < board.Count)
-                    DrawCard(draw, min, BoardCard, board[i], 1.35f);
+                    DrawCard(draw, min, BoardCard, board[i], 1.8f);
                 else
                     draw.AddRect(min, min + BoardCard, FeltLine, 4, ImDrawFlags.None, 1.5f);
             }
