@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="TexasPoker.Engine/TexasPoker.Engine.csproj" />
+  <Project Path="TexasPoker.Tests/TexasPoker.Tests.csproj" />
+  <Project Path="TexasPoker/TexasPoker.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

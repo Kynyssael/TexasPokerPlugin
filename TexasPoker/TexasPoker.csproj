@@ -1,0 +1,16 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <Description>A Texas Hold'em dealer table for FFXIV venues.</Description>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Keep the output in bin\Debug whether built alone or via the solution (which builds x64). -->
+    <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TexasPoker.Engine\TexasPoker.Engine.csproj" />
+  </ItemGroup>
+
+</Project>
