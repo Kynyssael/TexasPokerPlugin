@@ -164,16 +164,20 @@ public sealed class Plugin : IDalamudPlugin
         return (player.Name.TextValue, player.HomeWorld.Value.Name.ToString());
     }
 
+    /// <summary>The party, without the dealer (you), who runs the table rather than playing.</summary>
     public IEnumerable<(string Name, string World)> GetPartyMembers() =>
-        PartyList.Select(m => (m.Name.TextValue, m.World.Value.Name.ToString()));
+        PartyList.Select(m => (Name: m.Name.TextValue, World: m.World.Value.Name.ToString()))
+            .Where(m => !IsLocalPlayer(m.Name, m.World));
 
-    private bool IsLocalPlayer(Seat seat)
+    private bool IsLocalPlayer(Seat seat) => IsLocalPlayer(seat.Name, seat.World);
+
+    private static bool IsLocalPlayer(string name, string world)
     {
         var local = ObjectTable.LocalPlayer;
         return local != null &&
-               local.Name.TextValue.Equals(seat.Name, StringComparison.OrdinalIgnoreCase) &&
-               (seat.World.Length == 0 ||
-                local.HomeWorld.Value.Name.ToString().Equals(seat.World, StringComparison.OrdinalIgnoreCase));
+               local.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+               (world.Length == 0 ||
+                local.HomeWorld.Value.Name.ToString().Equals(world, StringComparison.OrdinalIgnoreCase));
     }
 
     private void OnAnnounced(IReadOnlyList<string> lines)

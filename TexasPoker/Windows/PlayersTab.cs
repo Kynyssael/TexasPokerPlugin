@@ -80,6 +80,8 @@ public sealed class PlayersTab
         ImGui.SameLine();
         if (ImGui.Button("Seat whole party"))
             SeatParty();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Seats everyone in your party except you, the dealer.");
 
         ImGui.SameLine();
         ImGui.TextColored(DealerControls.Muted, $"Each with a {newBuyIn:N0} buy-in");
@@ -135,7 +137,7 @@ public sealed class PlayersTab
                 .ToList();
 
             if (added.Count == 0)
-                throw new InvalidOperationException("Everyone in the party is already seated.");
+                throw new InvalidOperationException("Everyone in the party (except you, the dealer) is already seated.");
 
             Notify($"Seated {string.Join(", ", added.Select(s => s.Name))}. Collect {buyIn:N0} gil from each.",
                    () => added.ForEach(Table.RemoveSeat));
