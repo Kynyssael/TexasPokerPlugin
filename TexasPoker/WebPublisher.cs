@@ -56,7 +56,8 @@ public sealed class WebPublisher : IDisposable
 
     private Table Table => plugin.Table;
 
-    public bool IsConfigured => Config.WebEnabled && Config.WebTableId.Length > 0 && Config.WebTableKey.Length >= 24;
+    /// <summary>Publishing needs the web table turned on and a signed-in dealer.</summary>
+    public bool IsConfigured => Config.WebEnabled && Config.WebTableId.Length > 0 && plugin.Auth.SignedIn && plugin.Auth.Allowed;
 
     private static string BaseUrl => ServerUrl.TrimEnd('/');
 
@@ -161,7 +162,10 @@ public sealed class WebPublisher : IDisposable
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/api/t/{Config.WebTableId}");
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.WebTableKey);
+                // The session proves who's dealing. The table key proves a table from before sign-in was
+                // ours, so the server can move it (and its link) to this dealer's account.
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.AuthSessionKey);
+                request.Headers.Add("X-Table-Key", Config.WebTableKey);
                 request.Content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var response = await Http.SendAsync(request).ConfigureAwait(false);
                 LastSendFailed = !response.IsSuccessStatusCode;
@@ -176,10 +180,15 @@ public sealed class WebPublisher : IDisposable
                     retakeId = true;
                     Status = "That table id was taken; picking a new one...";
                 }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    Status = "The server wants you to sign in again.";
+                    plugin.Auth.CheckSoon();
+                }
                 else
                 {
                     Status = response.StatusCode == System.Net.HttpStatusCode.Forbidden
-                        ? "The server says this table belongs to another key. Restore your backup code on the Web tab."
+                        ? "The server says this table belongs to another dealer."
                         : $"The server answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync().ConfigureAwait(false)}";
                 }
             }

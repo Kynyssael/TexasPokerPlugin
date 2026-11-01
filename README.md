@@ -23,6 +23,21 @@ A no-limit Texas Hold'em **dealer tool** for FFXIV venues. Only the dealer runs 
 3. `/xlplugins` → **All Plugins** → search *Texas Hold'em Dealer* → **Install**.
 4. `/poker` opens the table.
 
+## Signing in
+
+The plugin is for approved dealers only. Until you sign in, `/poker` shows a sign-in screen instead of the table.
+
+1. Log in to the character you deal on, then click **Sign in with XIVAuth**.
+2. Your browser opens XIVAuth. Sign in there, choose that character and enter the code the plugin shows.
+3. The plugin unlocks. A sign-in lasts 30 days.
+
+Only characters on Elenor's XIVAuth allowlist can sign in. The plugin works only while you're on the character you
+signed in with. If the server can't be reached, your last sign-in keeps working for a day. If your sign-in ends
+mid-hand, you can still finish that hand.
+
+The server side (XIVAuth app, allowlist, `texaspoker revoke` / `block`) is described in
+[TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#managing-dealers).
+
 ## Releasing an update
 
 1. Bump `<Version>` in `TexasPoker/TexasPoker.csproj` (e.g. `0.1.0.0` → `0.2.0.0`). Dealers only get the update when the version goes up.

@@ -20,6 +20,9 @@ public sealed class WebTab
 
     public void Draw()
     {
+        DrawAccount();
+        ImGui.Separator();
+
         ImGui.TextWrapped("Players can watch your table live in a browser. The table link shows seats, stacks, bets " +
                           "and the board, but no hole cards. Each player's private link also shows their own two cards. " +
                           "Your table link is permanent: share it once and it keeps working.");
@@ -46,6 +49,22 @@ public sealed class WebTab
         DrawPrivateLinks();
         ImGui.Spacing();
         DrawBackup();
+    }
+
+    private void DrawAccount()
+    {
+        ImGui.TextColored(DealerControls.Gold, "Account");
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"Signed in with XIVAuth as {plugin.Auth.SignedInAs}");
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl || plugin.Table.HandInProgress);
+        if (ImGui.SmallButton("Sign out"))
+            plugin.Auth.SignOut();
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(plugin.Table.HandInProgress
+                ? "Finish the hand first."
+                : "Hold Ctrl and click. The plugin locks until you sign in again.");
     }
 
     private void DrawTableLink()

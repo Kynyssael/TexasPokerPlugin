@@ -19,6 +19,14 @@ public sealed class DealerBarWindow : Window
 
     public override void Draw()
     {
+        if (!plugin.Auth.Allowed)
+        {
+            ImGui.TextColored(DealerControls.Muted, "Sign in with XIVAuth to deal.");
+            if (ImGui.Button("Open sign-in"))
+                plugin.OpenMainWindow();
+            return;
+        }
+
         controls.DrawError();
         controls.DrawHandSummary(compact: true);
         ImGui.Separator();

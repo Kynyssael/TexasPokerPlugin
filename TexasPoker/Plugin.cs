@@ -39,6 +39,7 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.WebTableKey.Length == 0)
             Configuration.WebTableKey = WebPublisher.NewId(32);
         Web = new WebPublisher(this, Framework);
+        Auth = new AuthClient(this, Framework);
         Table.Announced += OnAnnounced;
         Table.HoleCardsDealt += OnHoleCardsDealt;
         Table.StreetDealt += OnStreetDealt;
@@ -80,6 +81,9 @@ public sealed class Plugin : IDalamudPlugin
 
     public WebPublisher Web { get; }
 
+    /// <summary>XIVAuth sign-in: the dealer tools only work for a signed-in, approved character.</summary>
+    public AuthClient Auth { get; }
+
     /// <summary>Everything the table has announced, newest last.</summary>
     public List<string> Log { get; } = new();
 
@@ -92,6 +96,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= mainWindow.Toggle;
         PluginInterface.UiBuilder.OpenConfigUi -= mainWindow.Toggle;
         windowSystem.RemoveAllWindows();
+        Auth.Dispose();
         Web.Dispose();
         Chat.Dispose();
     }
@@ -171,6 +176,19 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool IsLocalPlayer(Seat seat) => IsLocalPlayer(seat.Name, seat.World);
 
+    /// <summary>Whether you're logged in as this exact character (name and home world).</summary>
+    public bool IsLocalCharacter(string name, string world) => world.Length > 0 && IsLocalPlayer(name, world);
+
+    /// <summary>The character you're logged in as, or null on the title screen.</summary>
+    public string? LocalCharacter
+    {
+        get
+        {
+            var local = ObjectTable.LocalPlayer;
+            return local is null ? null : $"{local.Name.TextValue}@{local.HomeWorld.Value.Name}";
+        }
+    }
+
     private static bool IsLocalPlayer(string name, string world)
     {
         var local = ObjectTable.LocalPlayer;
@@ -198,7 +216,7 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void OnChatMessage(IHandleableChatMessage message)
     {
-        if (!Configuration.ReadChatActions || !Table.HandInProgress || Table.Actor is not { } actor)
+        if (!Auth.Allowed || !Configuration.ReadChatActions || !Table.HandInProgress || Table.Actor is not { } actor)
             return;
 
         var isTell = message.LogKind == XivChatType.TellIncoming;
@@ -312,7 +330,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        switch (args.Trim().ToLowerInvariant())
+        var sub = args.Trim().ToLowerInvariant();
+        if (!Auth.Allowed && sub is "state" or "deal" or "bar")
+        {
+            // Everything but the reference sheets needs a signed-in dealer; the main window shows the sign-in.
+            Chat.PrintLocal("Sign in with XIVAuth first: /poker opens the sign-in.");
+            mainWindow.IsOpen = true;
+            return;
+        }
+
+        switch (sub)
         {
             case "state":
                 AnnounceState();

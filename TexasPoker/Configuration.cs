@@ -70,6 +70,18 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<string, string> MessageTemplates { get; set; } = new();
 
+    /// <summary>The table server's session key from signing in with XIVAuth. Empty when signed out.</summary>
+    public string AuthSessionKey { get; set; } = string.Empty;
+
+    public string AuthName { get; set; } = string.Empty;
+
+    public string AuthWorld { get; set; } = string.Empty;
+
+    public string AuthLodestoneId { get; set; } = string.Empty;
+
+    /// <summary>When the server last confirmed the sign-in; it keeps working offline for a day after.</summary>
+    public DateTime? AuthConfirmedUtc { get; set; }
+
     /// <summary>Send the table to the web server so players can watch it in a browser.</summary>
     public bool WebEnabled { get; set; }
 

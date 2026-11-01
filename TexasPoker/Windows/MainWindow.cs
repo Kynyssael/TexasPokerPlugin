@@ -34,6 +34,7 @@ public sealed class MainWindow : Window
     private readonly TableView tableView;
     private readonly PlayersTab playersTab;
     private readonly WebTab webTab;
+    private readonly SignInPanel signInPanel;
 
     public MainWindow(Plugin plugin, DealerControls controls)
         : base("Texas Hold'em Dealer###TexasPokerMain")
@@ -44,6 +45,7 @@ public sealed class MainWindow : Window
         tableView = new TableView(plugin);
         playersTab = new PlayersTab(plugin, controls);
         webTab = new WebTab(plugin);
+        signInPanel = new SignInPanel(plugin);
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(680, 520) };
         Size = new Vector2(900, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -55,6 +57,12 @@ public sealed class MainWindow : Window
 
     public override void Draw()
     {
+        if (!plugin.Auth.Allowed)
+        {
+            signInPanel.Draw();
+            return;
+        }
+
         DrawStatusBar();
         controls.DrawError();
 
@@ -135,6 +143,9 @@ public sealed class MainWindow : Window
             if (ImGui.SmallButton("Clear queue"))
                 plugin.Chat.Clear();
         }
+
+        if (!plugin.Auth.Unlocked)
+            ImGui.TextColored(Red, "Your sign-in ended. Finish this hand; the table locks after it.");
 
         ImGui.Separator();
     }
