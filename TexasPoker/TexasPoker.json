@@ -4,6 +4,5 @@
   "Punchline": "Deal no-limit Texas Hold'em for your venue.",
   "Description": "A dealer tool for running Texas Hold'em tables. Shuffles and deals, sends hole cards by /tell, tracks blinds, bets, side pots, rake and each player's gil ledger, and announces the action to party chat with wording you can customise. Reads players' actions from chat for you to confirm, and can show your table live on the web. Only the dealer needs the plugin.",
   "ApplicableVersion": "any",
-  "RepoUrl": "https://github.com/Kynyssael/TexasPokerPlugin",
   "Tags": [ "poker", "casino", "venue", "dealer", "cards" ]
 }

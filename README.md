@@ -11,17 +11,20 @@ A no-limit Texas Hold'em **dealer tool** for FFXIV venues. Only the dealer runs 
 - reads players' actions ("call", "raise to 20k") from chat and picks them for the dealer to confirm
 - optional live web table that players can watch in a browser
 
-## Install
+## Install (dev plugin)
 
-1. In game, open `/xlsettings` → **Experimental**.
-2. Under *Custom Plugin Repositories*, paste this and click **+**, then **Save**:
+The plugin isn't on any plugin repository. Dealers run it as a Dalamud dev plugin.
 
-   ```
-   https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo.json
-   ```
+1. Build the package: `dotnet build TexasPoker -c Release` makes `TexasPoker\bin\Release\TexasPoker\latest.zip`.
+   Send that zip to the dealer.
+2. The dealer unzips it into a folder they keep, e.g. `C:\FFXIV Plugins\TexasPoker`.
+3. In game: `/xlsettings` → **Experimental** → under *Dev Plugin Locations* add the full path to `TexasPoker.dll`
+   in that folder, click **+**, then **Save**.
+4. `/xlplugins` → **Dev Tools** → enable *Texas Hold'em Dealer*.
+5. `/poker` opens the plugin; sign in as below.
 
-3. `/xlplugins` → **All Plugins** → search *Texas Hold'em Dealer* → **Install**.
-4. `/poker` opens the table.
+To update, send a new zip. The dealer replaces the files in the same folder and reloads the plugin in **Dev Tools**.
+Their settings, players and table link are kept.
 
 ## Signing in
 
@@ -37,12 +40,6 @@ mid-hand, you can still finish that hand.
 
 The server side (XIVAuth app, allowlist, `texaspoker revoke` / `block`) is described in
 [TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#managing-dealers).
-
-## Releasing an update
-
-1. Bump `<Version>` in `TexasPoker/TexasPoker.csproj` (e.g. `0.1.0.0` → `0.2.0.0`). Dealers only get the update when the version goes up.
-2. Run `.\release.ps1`. It builds in Release, copies the package to `release/latest.zip` and updates `repo.json`.
-3. Commit both files and push. Dalamud picks up the new version the next time dealers check for updates.
 
 ## Layout
 
@@ -62,7 +59,7 @@ dotnet build
 dotnet test
 ```
 
-## Run a dev build in game
+## Run your own build in game
 
 1. In game, `/xlsettings` → **Experimental** → add the full path to `TexasPoker\bin\Debug\TexasPoker.dll` under *Dev Plugin Locations*, and save.
 2. `/xlplugins` → **Dev Tools** → enable *Texas Hold'em Dealer*.
