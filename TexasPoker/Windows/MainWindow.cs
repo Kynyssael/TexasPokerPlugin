@@ -144,10 +144,16 @@ public sealed class MainWindow : Window
                 plugin.Chat.Clear();
         }
 
-        if (!plugin.Auth.Unlocked)
-            ImGui.TextColored(Red, "Your sign-in ended. Finish this hand; the table locks after it.");
-
         ImGui.Separator();
+
+        // Signed out mid-hand: the hand can finish, and signing in again right here keeps the table going.
+        if (!plugin.Auth.Unlocked)
+        {
+            ImGui.TextColored(Red, "Your sign-in ended. You can finish this hand; the table locks after it unless you sign in again.");
+            if (ImGui.CollapsingHeader("Sign in again", ImGuiTreeNodeFlags.DefaultOpen))
+                signInPanel.Draw();
+            ImGui.Separator();
+        }
     }
 
     private void DrawTableTab()

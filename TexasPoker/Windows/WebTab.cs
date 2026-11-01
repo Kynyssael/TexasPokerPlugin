@@ -55,16 +55,30 @@ public sealed class WebTab
     {
         ImGui.TextColored(DealerControls.Gold, "Account");
         ImGui.SameLine();
-        ImGui.TextUnformatted($"Signed in with XIVAuth as {plugin.Auth.SignedInAs}");
+        ImGui.TextUnformatted(plugin.Auth.SignedIn
+            ? $"Signed in with XIVAuth as {plugin.Auth.SignedInAs}"
+            : "Not signed in");
         ImGui.SameLine();
-        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl || plugin.Table.HandInProgress);
         if (ImGui.SmallButton("Sign out"))
-            plugin.Auth.SignOut();
-        ImGui.EndDisabled();
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(plugin.Table.HandInProgress
-                ? "Finish the hand first."
-                : "Hold Ctrl and click. The plugin locks until you sign in again.");
+            ImGui.OpenPopup("signout");
+
+        if (ImGui.BeginPopup("signout"))
+        {
+            ImGui.TextUnformatted("Sign out of XIVAuth?");
+            ImGui.TextColored(DealerControls.Muted, plugin.Table.HandInProgress
+                ? "You can finish this hand; the plugin locks after it until you sign in again."
+                : "The plugin locks until you sign in again.");
+            if (ImGui.Button("Sign out##confirm"))
+            {
+                plugin.Auth.SignOut();
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel##signout"))
+                ImGui.CloseCurrentPopup();
+            ImGui.EndPopup();
+        }
     }
 
     private void DrawTableLink()
