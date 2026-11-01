@@ -13,8 +13,9 @@ using TexasPoker.Windows;
 namespace TexasPoker;
 
 /// <summary>
-/// Sends the table to the web server (web/server.js) so players can watch it live in a browser.
-/// The shared page gets no hole cards; each player's private link (?p=token) also gets their own.
+/// Sends the table to the web server (TexasPokerServer) so players can watch it live in a browser.
+/// The shared page gets no hole cards. Each player's private link ends in #token; their cards are sent
+/// encrypted with a key from that token (see <see cref="CardSealer"/>), so only their browser can read them.
 /// Only the newest state is sent: if the table changes while a send is in flight, the next send
 /// carries the latest state and anything in between is skipped.
 /// </summary>
@@ -24,6 +25,7 @@ public sealed class WebPublisher : IDisposable
     public const string ServerUrl = "https://poker.elenoramdali.com";
 
     private const string Alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private const int TokenLength = 12;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
     private static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(60);
 
@@ -63,22 +65,35 @@ public sealed class WebPublisher : IDisposable
 
     public string TableUrl => $"{BaseUrl}/t/{Config.WebTableId}";
 
-    public string PlayerUrl(Seat seat) => $"{TableUrl}?p={TokenFor(seat)}";
+    /// <summary>The token goes after #, which browsers never send to a server.</summary>
+    public string PlayerUrl(Seat seat) => $"{TableUrl}#{TokenFor(seat)}";
 
     public static string NewId(int length) =>
         new(Enumerable.Range(0, length).Select(_ => Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]).ToArray());
 
-    /// <summary>The player's private link token, created the first time it's needed.</summary>
+    /// <summary>
+    /// The player's private link token, created the first time it's needed. 12 characters (about 70 bits):
+    /// short enough to type from game chat, too long to guess. Shorter tokens are from the old ?p= links,
+    /// which servers could log, so they're replaced.
+    /// </summary>
     public string TokenFor(Seat seat)
     {
         var key = seat.DisplayName.ToLowerInvariant();
-        if (!Config.WebTokens.TryGetValue(key, out var token))
+        if (!Config.WebTokens.TryGetValue(key, out var token) || token.Length < TokenLength)
         {
-            token = NewId(10);
+            token = NewId(TokenLength);
             Config.WebTokens[key] = token;
         }
 
         return token;
+    }
+
+    /// <summary>Forgets private links of players who left the table, so an old link can't follow them back.</summary>
+    public void ForgetLinksOfAbsentPlayers()
+    {
+        var seated = Table.Seats.Select(s => s.DisplayName.ToLowerInvariant()).ToHashSet();
+        foreach (var name in Config.WebTokens.Keys.Where(k => !seated.Contains(k)).ToList())
+            Config.WebTokens.Remove(name);
     }
 
     /// <summary>Queues the current table to be sent. Call on the framework thread.</summary>
@@ -247,13 +262,20 @@ public sealed class WebPublisher : IDisposable
             resultsHand = Table.HandNumber,
         };
 
-        var privates = Table.Seats.ToDictionary(TokenFor, seat => new
-        {
-            name = seat.Name,
-            world = seat.World,
-            cards = seat.InHand && seat.HoleCards.Count > 0 ? Cards(seat.HoleCards) : [],
-            hand = seat.InHand && !seat.Folded ? Table.CurrentHand(seat)?.Describe() : null,
-        });
+        // Each player's own data, encrypted for their browser and filed under a lookup the server can't reverse.
+        var tableId = Config.WebTableId;
+        var privates = Table.Seats.ToDictionary(
+            seat => CardSealer.Lookup(tableId, TokenFor(seat)),
+            seat => new
+            {
+                c = CardSealer.Seal(tableId, TokenFor(seat), JsonSerializer.Serialize(new
+                {
+                    name = seat.Name,
+                    world = seat.World,
+                    cards = seat.InHand && seat.HoleCards.Count > 0 ? Cards(seat.HoleCards) : [],
+                    hand = seat.InHand && !seat.Folded ? Table.CurrentHand(seat)?.Describe() : null,
+                })),
+            });
 
         return JsonSerializer.Serialize(new { state, privates });
     }

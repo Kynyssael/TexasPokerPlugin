@@ -123,6 +123,9 @@ public sealed class Plugin : IDalamudPlugin
             SittingOut = s.SittingOut,
         }).ToList();
 
+        // A player who cashed out loses their private link; a new one is made if they sit down again.
+        Web.ForgetLinksOfAbsentPlayers();
+
         // Before saving, so any private link tokens it creates are saved too.
         Web.Push();
         PluginInterface.SavePluginConfig(Configuration);

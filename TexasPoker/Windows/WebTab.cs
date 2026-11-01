@@ -91,7 +91,22 @@ public sealed class WebTab
 
         if (ImGui.Button("Tell every player their private link"))
             plugin.TellWebLinks();
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+        if (ImGui.Button("New links for everyone"))
+        {
+            Config.WebTokens.Clear();
+            plugin.Save();
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold Ctrl and click. Every private link stops working; tell players their new ones.\n" +
+                             "Good to do at the start of an event. A player's link also ends when they cash out.");
+
         ImGui.TextColored(DealerControls.Muted, "Game chat links can't be clicked: players type them in, or copy them with a chat plugin.");
+        ImGui.TextColored(DealerControls.Muted, "Each player's cards are encrypted for their link only: not even the server can read them.");
 
         if (!ImGui.BeginTable("##links", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             return;

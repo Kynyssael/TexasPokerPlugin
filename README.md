@@ -78,15 +78,18 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 ## Live web table (optional)
 
 Players can watch a dealer's table in a browser: seats, stacks, bets, pot and board, updating live. The table
-link never shows hole cards (except cards shown at showdown). Each player also gets a private link that adds
-their own two cards and best hand.
+link never shows hole cards (except cards shown at showdown). Each player also gets a private link
+(`…/t/aB3xQ9#k7Hq2mXz9PwR`) that adds their own two cards and best hand.
 
 One server, which you host, serves every dealer who uses the plugin. The server address is built into the plugin:
-dealers only tick a box. Each dealer gets a **permanent** table link like `https://poker.example.com/t/aB3xQ9`.
+dealers only tick a box. Each dealer gets a **permanent** table link like `https://poker.example.com/t/aB3xQ9`,
+owned by their signed-in character.
 
-How tables stay separate: each copy of the plugin makes its own secret table key. The first update for a table id
-claims it on the server, and from then on only that key can update it. The server stores only a hash of each key,
-in `tables.json`, so claims survive restarts. There's no shared password to leak.
+**Cards are end-to-end encrypted.** The part of a private link after `#` never leaves the player's browser. The
+plugin encrypts each player's cards with a key made from it (see `CardSealer`), so the server, Cloudflare and their
+logs only ever see ciphertext. A player's link ends when they cash out, and *New links for everyone* (Ctrl+click)
+replaces all of them, e.g. at the start of an event. On their private page, players can tick *Hide my cards* so
+their cards stay face-down unless they press and hold.
 
 ### 1. Point the plugin at your server
 
@@ -107,4 +110,5 @@ Its README covers setting it up in a Proxmox container, HTTPS with Cloudflare Tu
 2. *Post in /p* shares the table link. *Tell every player their private link* sends each player their own link by `/tell`.
 3. Links can't be clicked in game chat, so they're short enough to type. Players can also copy them with a chat plugin, or you can post them on Discord.
 4. If one player's private link leaks, Ctrl+click *New link* on their row. The table link never changes.
+   Private links made before 0.2.1 (`?p=…`) no longer show cards: tell players their new links once.
 5. To keep the same table link on another PC or after a reinstall, use *Move my table to another PC*: copy the backup code and restore it there.
