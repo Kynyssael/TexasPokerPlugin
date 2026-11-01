@@ -326,6 +326,24 @@ public class TableTests
     }
 
     [Fact]
+    public void Sequence_moves_forward_on_every_change_even_undo()
+    {
+        var table = NewTable(null, 1000, 1000, 1000);
+        var seen = new List<int> { table.Sequence };
+        table.StartHand();
+        seen.Add(table.Sequence);
+        table.Act(PlayerAction.Call);
+        seen.Add(table.Sequence);
+        table.Undo();
+        seen.Add(table.Sequence);
+        table.CancelHand();
+        seen.Add(table.Sequence);
+
+        Assert.Equal(seen.Order(), seen);
+        Assert.Equal(seen.Count, seen.Distinct().Count());
+    }
+
+    [Fact]
     public void Custom_messages_replace_the_wording()
     {
         var deck = Rigged(["As Ah", "Ks Kh", "2c 7d"], "Ad Kd 9c 4s 3h");

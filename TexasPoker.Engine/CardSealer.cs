@@ -55,8 +55,31 @@ public static class CardSealer
         return Encoding.UTF8.GetString(plain);
     }
 
+    /// <summary>
+    /// The signature a player's page puts on an action it sends: base64url(HMAC-SHA256(key, payload)), the key
+    /// derived from their token like the card key but for a different purpose. Only the plugin and that
+    /// player's browser know the token, so the server (or anyone between) can't forge or alter an action.
+    /// </summary>
+    public static string SignAction(string tableId, string token, string payload)
+    {
+        using var hmac = new HMACSHA256(DeriveActionKey(tableId, token));
+        return Base64Url(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload)));
+    }
+
+    public static bool VerifyAction(string tableId, string token, string payload, string signature)
+    {
+        var expected = Encoding.ASCII.GetBytes(SignAction(tableId, token, payload));
+        var given = Encoding.ASCII.GetBytes(signature);
+        return CryptographicOperations.FixedTimeEquals(expected, given);
+    }
+
     private static byte[] DeriveKey(string tableId, string token) =>
         HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), 32, Encoding.UTF8.GetBytes(tableId), KeyInfo);
+
+    private static readonly byte[] ActionKeyInfo = Encoding.UTF8.GetBytes("texaspoker-actions-v1");
+
+    private static byte[] DeriveActionKey(string tableId, string token) =>
+        HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(token), 32, Encoding.UTF8.GetBytes(tableId), ActionKeyInfo);
 
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');

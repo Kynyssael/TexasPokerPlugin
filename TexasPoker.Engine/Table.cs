@@ -119,6 +119,12 @@ public sealed class Table
     /// <summary>The most recent player action this hand, e.g. "Alice raises to 3,000".</summary>
     public string? LastAction { get; private set; }
 
+    /// <summary>
+    /// Goes up by one after every change to the hand (deal, action, undo, cancel) and never goes back,
+    /// not even on undo. An action sent for one value can't be applied once the table has moved on.
+    /// </summary>
+    public int Sequence { get; private set; }
+
     public bool CanUndo => HandInProgress && undo.Count > 0;
 
     public Seat AddSeat(string name, string world, long buyIn)
@@ -694,6 +700,7 @@ public sealed class Table
     // Announcements go out before street events, so players see the board before their private tell.
     private void Flush()
     {
+        Sequence++;
         if (pending.Count > 0)
         {
             var lines = pending.ToArray();

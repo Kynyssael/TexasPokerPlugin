@@ -122,6 +122,31 @@ public sealed class WebTab
         ImGui.TextColored(DealerControls.Muted, "Game chat links can't be clicked: players type them in, or copy them with a chat plugin.");
         ImGui.TextColored(DealerControls.Muted, "Each player's cards are encrypted for their link only: not even the server can read them.");
 
+        var webActions = Config.WebActions;
+        if (ImGui.Checkbox("Players can act from their private page", ref webActions))
+        {
+            Config.WebActions = webActions;
+            plugin.Save();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("On their turn, a player's private page shows Fold / Check / Call / Raise buttons.\n" +
+                             "Actions are signed with the player's link, so nobody else can send one for them.");
+
+        ImGui.BeginDisabled(!Config.WebActions);
+        ImGui.Indent();
+        var auto = Config.WebActionsAuto;
+        if (ImGui.Checkbox("Apply web actions automatically", ref auto))
+        {
+            Config.WebActionsAuto = auto;
+            plugin.Save();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Off: a web action is only picked, and you press Confirm, like an action typed in chat.");
+        ImGui.Unindent();
+        ImGui.EndDisabled();
+
         if (!ImGui.BeginTable("##links", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             return;
 

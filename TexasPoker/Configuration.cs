@@ -96,6 +96,12 @@ public sealed class Configuration : IPluginConfiguration
 
     public string WebTableTitle { get; set; } = "Texas Hold'em";
 
+    /// <summary>Players can act (fold, call, raise...) from their private page on their turn.</summary>
+    public bool WebActions { get; set; } = true;
+
+    /// <summary>Web actions apply at once; off = they're only picked, for the dealer to confirm.</summary>
+    public bool WebActionsAuto { get; set; } = true;
+
     /// <summary>Each player's private link token, by "name@world" in lower case.</summary>
     public Dictionary<string, string> WebTokens { get; set; } = new();
 

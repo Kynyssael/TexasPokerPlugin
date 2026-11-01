@@ -37,6 +37,10 @@ public sealed class WebPublisher : IDisposable
     private bool sending;
     private DateTime nextHeartbeat = DateTime.MinValue;
 
+    private static readonly TimeSpan ActionFetchEvery = TimeSpan.FromSeconds(1.5);
+    private DateTime nextActionFetch = DateTime.MinValue;
+    private bool fetchingActions;
+
     // Set by the send loop, handled on the framework thread where the config is safe to change.
     private volatile bool claimedNow;
     private volatile bool retakeId;
@@ -137,7 +141,95 @@ public sealed class WebPublisher : IDisposable
 
         if (IsConfigured && DateTime.UtcNow >= nextHeartbeat)
             Push();
+
+        if (IsConfigured && Config.WebActions && Table.HandInProgress && !fetchingActions && DateTime.UtcNow >= nextActionFetch)
+            FetchActions();
     }
+
+    /// <summary>Collects actions players sent from their private pages, then checks and applies them here.</summary>
+    private void FetchActions()
+    {
+        fetchingActions = true;
+        nextActionFetch = DateTime.UtcNow + ActionFetchEvery;
+        var url = $"{BaseUrl}/api/t/{Config.WebTableId}/actions";
+        var session = Config.AuthSessionKey;
+        _ = Task.Run(async () =>
+        {
+            var received = Array.Empty<WebAction>();
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                    received = JsonSerializer.Deserialize<WebAction[]>(await response.Content.ReadAsStringAsync().ConfigureAwait(false)) ?? [];
+            }
+            catch (Exception)
+            {
+                // Try again next time; players can always fall back to chat.
+            }
+
+            await framework.RunOnFrameworkThread(() =>
+            {
+                fetchingActions = false;
+                foreach (var action in received)
+                    HandleAction(action);
+            }).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>
+    /// Applies one web action if it's genuine (signed with that player's token) and still current: this
+    /// table, this hand, this exact turn, and that player is the one to act. Anything else is ignored.
+    /// </summary>
+    private void HandleAction(WebAction web)
+    {
+        var tableId = Config.WebTableId;
+        var seat = Table.Seats.FirstOrDefault(s => CardSealer.Lookup(tableId, TokenFor(s)) == web.k);
+        if (seat is null || web.a is null || web.s is null || !CardSealer.VerifyAction(tableId, TokenFor(seat), web.a, web.s))
+            return;
+
+        ActionPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<ActionPayload>(web.a);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (payload is null || payload.table != tableId || payload.hand != Table.HandNumber ||
+            payload.turn != Table.Sequence || Table.Actor != seat)
+            return; // stale (the table moved on) or not their turn
+
+        var options = Table.GetOptions();
+        ParsedAction? action = payload.action switch
+        {
+            "fold" => new ParsedAction(PlayerAction.Fold, 0),
+            "check" when options.CanCheck => new ParsedAction(PlayerAction.Check, 0),
+            "call" when options.ToCall > 0 => new ParsedAction(PlayerAction.Call, 0),
+            "call" when options.CanCheck => new ParsedAction(PlayerAction.Check, 0),
+            "allin" => new ParsedAction(PlayerAction.AllIn, 0),
+            "raise" when payload.amount >= options.MaxRaiseTo => new ParsedAction(PlayerAction.AllIn, 0),
+            "raise" when options.CanRaise && payload.amount >= options.MinRaiseTo => new ParsedAction(PlayerAction.BetOrRaise, payload.amount),
+            _ => null,
+        };
+
+        if (action is null)
+        {
+            plugin.Chat.PrintLocal($"{seat.Name} sent \"{payload.action} {payload.amount:N0}\" from the web, which isn't possible right now.");
+            return;
+        }
+
+        plugin.ApplyWebAction(seat, action);
+    }
+
+    /// <summary>One queued action as the server hands it over: lookup, payload, signature.</summary>
+    private sealed record WebAction(string? k, string? a, string? s);
+
+    /// <summary>What the page signs: which table, hand and turn it's for, and the action.</summary>
+    private sealed record ActionPayload(string? table, int hand, int turn, string? action, long amount);
 
     /// <summary>"id:key", so a dealer can move their table (and its link) to another PC or a reinstall.</summary>
     public string BackupCode => $"{Config.WebTableId}:{Config.WebTableKey}";
@@ -260,6 +352,9 @@ public sealed class WebPublisher : IDisposable
             seats,
             results = Table.HandInProgress ? [] : results,
             resultsHand = Table.HandNumber,
+            turn = Table.Sequence,
+            webActions = Config.WebActions,
+            options = ActorOptions(),
         };
 
         // Each player's own data, encrypted for their browser and filed under a lookup the server can't reverse.
@@ -278,6 +373,26 @@ public sealed class WebPublisher : IDisposable
             });
 
         return JsonSerializer.Serialize(new { state, privates });
+    }
+
+    /// <summary>What the player to act may do, for the buttons on their private page. Public: it's on the table anyway.</summary>
+    private object? ActorOptions()
+    {
+        if (Table.Actor is not { } actor)
+            return null;
+
+        var o = Table.GetOptions();
+        return new
+        {
+            toCall = o.ToCall,
+            callAmount = o.CallAmount,
+            canCheck = o.CanCheck,
+            canRaise = o.CanRaise && o.MaxRaiseTo > o.MinRaiseTo,
+            isBet = o.IsBet,
+            minRaiseTo = o.MinRaiseTo,
+            maxRaiseTo = o.MaxRaiseTo,
+            allIn = actor.Stack + actor.StreetBet,
+        };
     }
 
     private static object[] Cards(System.Collections.Generic.IEnumerable<Card> cards) =>

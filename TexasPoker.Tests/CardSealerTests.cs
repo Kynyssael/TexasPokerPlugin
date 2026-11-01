@@ -33,6 +33,18 @@ public class CardSealerTests
     }
 
     [Fact]
+    public void Signed_actions_verify_only_unchanged_and_with_the_right_token()
+    {
+        const string payload = "{\"table\":\"aB3xQ9\",\"hand\":7,\"turn\":42,\"action\":\"call\",\"amount\":0}";
+        var signature = CardSealer.SignAction("aB3xQ9", "k7Hq2mXz9PwR", payload);
+
+        Assert.True(CardSealer.VerifyAction("aB3xQ9", "k7Hq2mXz9PwR", payload, signature));
+        Assert.False(CardSealer.VerifyAction("aB3xQ9", "otherToken12", payload, signature));
+        Assert.False(CardSealer.VerifyAction("aB3xQ9", "k7Hq2mXz9PwR", payload.Replace("call", "fold"), signature));
+        Assert.False(CardSealer.VerifyAction("aB3xQ9", "k7Hq2mXz9PwR", payload, "not-a-signature"));
+    }
+
+    [Fact]
     public void Changed_ciphertext_is_rejected()
     {
         var sealedText = CardSealer.Seal("t", "token", "secret cards").ToCharArray();

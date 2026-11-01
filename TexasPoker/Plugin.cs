@@ -142,6 +142,30 @@ public sealed class Plugin : IDalamudPlugin
     public void TellWebLink(Seat seat) =>
         TellPlayer(seat, $"Watch the table and see your cards (keep this link private): {Web.PlayerUrl(seat)}");
 
+    /// <summary>
+    /// An action a player sent from their private page, already checked as genuine and current. Applied at
+    /// once, or (with automatic web actions off) picked for the dealer to confirm, like a chat action.
+    /// </summary>
+    public void ApplyWebAction(Seat seat, ParsedAction action)
+    {
+        if (!Configuration.WebActionsAuto)
+        {
+            var label = controls.PickFromChat(action);
+            Chat.PrintLocal($"{seat.Name} (web): {label}. Press Confirm to apply.");
+            return;
+        }
+
+        try
+        {
+            Table.Act(action.Action, action.Amount);
+            Chat.PrintLocal($"{seat.Name} acted from the web: {Table.LastAction}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Chat.PrintLocal($"{seat.Name}'s web action didn't go through: {ex.Message}");
+        }
+    }
+
     public void ToggleDealerBar() => dealerBarWindow.Toggle();
 
     public void OpenMainWindow() => mainWindow.IsOpen = true;

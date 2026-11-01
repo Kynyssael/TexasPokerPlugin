@@ -91,6 +91,12 @@ logs only ever see ciphertext. A player's link ends when they cash out, and *New
 replaces all of them, e.g. at the start of an event. On their private page, players can tick *Hide my cards* so
 their cards stay face-down unless they press and hold.
 
+**Players can act from their private page.** On their turn the page shows Fold / Check / Call / Raise / All-in. Each
+action is signed with the player's link, so neither the server nor anyone else can send one for them. The plugin
+only applies it if it's for the current hand and that exact turn. By default it applies at once (Web tab: *Apply web
+actions automatically*); turned off, it's picked for you to confirm, like an action typed in chat. Players can still
+type in chat as before.
+
 ### 1. Point the plugin at your server
 
 Set your server's address in `TexasPoker/WebPublisher.cs` and rebuild:
