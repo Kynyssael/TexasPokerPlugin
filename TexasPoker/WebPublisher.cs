@@ -414,7 +414,7 @@ public sealed class WebPublisher : IDisposable
             });
 
         var showAs = Config.WebShowAs.Length > 0 ? Config.WebShowAs : null;
-        return JsonSerializer.Serialize(new { state, privates, showAs });
+        return JsonSerializer.Serialize(new { state, privates, showAs, listed = Config.WebListOnVenuePage });
     }
 
     /// <summary>What the player to act may do, for the buttons on their private page. Public: it's on the table anyway.</summary>

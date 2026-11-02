@@ -108,6 +108,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public string WebShowAs { get; set; } = string.Empty;
 
+    /// <summary>List the table on its venue's page. Off keeps it off the list (it still shows the venue's branding).</summary>
+    public bool WebListOnVenuePage { get; set; } = true;
+
     /// <summary>Each player's private link token, by "name@world" in lower case.</summary>
     public Dictionary<string, string> WebTokens { get; set; } = new();
 

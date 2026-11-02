@@ -50,6 +50,7 @@ public sealed class WebTab
 
         DrawTableName();
         DrawShowAs();
+        DrawListOnVenuePage();
         ImGui.Separator();
         DrawTableLink();
         ImGui.Spacing();
@@ -103,6 +104,25 @@ public sealed class WebTab
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Shown at the top of your table page, and on your venue's page. Leave it empty for \"Texas Hold'em\".");
+    }
+
+    /// <summary>For tables shown under a venue: whether the venue's page lists it (off for a private game).</summary>
+    private void DrawListOnVenuePage()
+    {
+        var auth = plugin.Auth;
+        if (auth.Venues.Count == 0 || (Config.WebShowAs == "own" && auth.HasIndividualLicence))
+            return;
+
+        var listed = Config.WebListOnVenuePage;
+        if (ImGui.Checkbox("List my table on the venue page", ref listed))
+        {
+            Config.WebListOnVenuePage = listed;
+            plugin.Save();
+            Web.Push();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Off for a private game: only people you give the link to find it. It still shows the venue's name and logo.");
     }
 
     /// <summary>

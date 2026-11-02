@@ -58,6 +58,9 @@ and its page.
 A dealer with more than one licence (their own and a venue's, or several venues) picks **Show my table as** on the
 Web tab: *My own table* (no venue branding) or one of their venues.
 
+A table shown under a venue is listed on the venue's page. For a private game, untick **List my table on the
+venue page** on the Web tab: the table keeps the venue's name and logo, but only people with the link find it.
+
 The server side (XIVAuth app, `texaspoker allow`, `texaspoker venue ...`) is described in
 [TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#licences).
 
