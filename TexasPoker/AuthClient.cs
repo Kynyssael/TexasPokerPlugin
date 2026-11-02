@@ -286,7 +286,8 @@ public sealed class AuthClient : IDisposable
                             v.GetProperty("id").GetString() ?? string.Empty,
                             v.GetProperty("name").GetString() ?? string.Empty,
                             v.TryGetProperty("isOwner", out var owner) && owner.ValueKind == JsonValueKind.True,
-                            v.TryGetProperty("ownerName", out var ownerName) ? ownerName.GetString() ?? string.Empty : string.Empty));
+                            v.TryGetProperty("ownerName", out var ownerName) ? ownerName.GetString() ?? string.Empty : string.Empty,
+                            v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty));
                     }
                 }
 
@@ -343,4 +344,5 @@ public sealed class AuthClient : IDisposable
 }
 
 /// <summary>A venue licence the signed-in character holds a seat in.</summary>
-public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName);
+/// <summary>A venue the dealer owns or deals for. <see cref="Page"/> is its public page's path, e.g. "/v/primal-den".</summary>
+public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName, string Page);

@@ -46,9 +46,14 @@ working for a day. If your sign-in ends mid-hand, you can still finish that hand
 **Venue owners** get a **Venue** tab. It shows how many of the venue's dealer seats are used and lists its dealers.
 Type a dealer as `First Last@World` (or use *Add my target*) to add them; they can sign in right away, even if they
 never have before. Ctrl+click *Remove* to take a dealer off, which signs them out unless they have another licence.
-Tables of a venue's dealers show the venue's name and logo on the website. *Upload logo...* picks an image (PNG,
-JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can withdraw it.
-Dealers who aren't the owner see which venue they deal for.
+Tables of a venue's dealers show the venue's name, logo and colours on the website. *Upload logo...* picks an image
+(PNG, JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can
+withdraw it. Under **Colours**, the owner picks the felt and an accent colour (trim, pot, titles) and clicks *Save
+colours*; open tables change straight away. *Use house colours* goes back to the Eorzean Poker green and gold.
+
+Every venue has a **venue page**, e.g. `eorzeanpoker.app/v/primal-den`, listing its open tables so players can find
+them; *Open* and *Copy* are next to it on the Venue tab. Dealers who aren't the owner see which venue they deal for,
+and its page.
 
 A dealer with more than one licence (their own and a venue's, or several venues) picks **Show my table as** on the
 Web tab: *My own table* (no venue branding) or one of their venues.

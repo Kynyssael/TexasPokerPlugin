@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -21,6 +22,8 @@ public sealed class VenueTab
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private const int MaxLogoBytes = 256 * 1024;
+    private static readonly Vector3 HouseFelt = FromHex("#1a6b3f");
+    private static readonly Vector3 HouseAccent = FromHex("#f2c14e");
 
     private readonly Plugin plugin;
     private readonly FileDialogManager fileDialog = new();
@@ -30,6 +33,8 @@ public sealed class VenueTab
     private string message = string.Empty;
     private bool messageIsError;
     private readonly Dictionary<string, string> newDealer = new();
+    /// <summary>Colours being picked, per venue, until they're saved.</summary>
+    private readonly Dictionary<string, (Vector3 Felt, Vector3 Accent)> colours = new();
 
     public VenueTab(Plugin plugin)
     {
@@ -48,7 +53,8 @@ public sealed class VenueTab
                 continue;
             ImGui.TextColored(DealerControls.Gold, venue.Name);
             ImGui.TextWrapped($"You deal for {venue.Name}. Its owner, {venue.OwnerName}, manages its dealers. " +
-                              "Your table on the website shows the venue's name and logo.");
+                              "Your table on the website shows the venue's name, logo and colours, and is listed on its page.");
+            DrawPageLink(venue.Page);
             ImGui.Separator();
         }
 
@@ -151,9 +157,88 @@ public sealed class VenueTab
             ImGui.TextColored(DealerControls.Muted, "All seats are taken. Remove a dealer, or ask Elenor for more seats.");
 
         ImGui.Spacing();
+        ImGui.TextColored(DealerControls.Gold, "Venue page");
+        ImGui.SameLine();
+        DrawPageLink(venue.Page);
+        ImGui.TextColored(DealerControls.Muted, "Lists your venue's open tables, so players can find them. Post it once on your Discord or Carrd.");
+
+        ImGui.Spacing();
         DrawLogo(venue);
+        ImGui.Spacing();
+        DrawColours(venue);
         ImGui.PopID();
     }
+
+    /// <summary>A venue page's address with Open and Copy buttons.</summary>
+    private static void DrawPageLink(string page)
+    {
+        if (page.Length == 0)
+            return;
+        var url = BaseUrl + page;
+        ImGui.TextUnformatted(url.Replace("https://", string.Empty));
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Open##page"))
+            Util.OpenLink(url);
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Copy##page"))
+            ImGui.SetClipboardText(url);
+    }
+
+    private void DrawColours(OwnedVenue venue)
+    {
+        var saved = (venue.Felt ?? HouseFelt, venue.Accent ?? HouseAccent);
+        var (felt, accent) = colours.GetValueOrDefault(venue.Id, saved);
+
+        ImGui.TextColored(DealerControls.Gold, "Colours");
+        ImGui.SameLine();
+        ImGui.TextUnformatted(venue.Felt is null ? "The Eorzean Poker green and gold." : "Your own, on your tables and venue page.");
+        ImGui.BeginDisabled(busy);
+        var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.DisplayHex;
+        var changed = ImGui.ColorEdit3("Felt##felt", ref felt, flags);
+        ImGui.SameLine(0, 24);
+        changed |= ImGui.ColorEdit3("Accent (trim, pot, titles)##accent", ref accent, flags);
+        if (changed)
+            colours[venue.Id] = (felt, accent);
+
+        var edited = colours.ContainsKey(venue.Id) && (ToHex(felt) != ToHex(saved.Item1) || ToHex(accent) != ToHex(saved.Item2));
+        ImGui.BeginDisabled(!edited);
+        if (ImGui.Button("Save colours"))
+        {
+            var body = new StringContent(JsonSerializer.Serialize(new { felt = ToHex(felt), accent = ToHex(accent) }), Encoding.UTF8, "application/json");
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/theme", body, "Colours saved. Open tables change straight away.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Undo"))
+            colours.Remove(venue.Id);
+        ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(venue.Felt is null);
+        if (ImGui.Button("Use house colours"))
+        {
+            colours.Remove(venue.Id);
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/theme", new StringContent("null", Encoding.UTF8, "application/json"),
+                 "Back to the Eorzean Poker colours.");
+        }
+
+        ImGui.EndDisabled();
+        ImGui.EndDisabled();
+        ImGui.TextColored(DealerControls.Muted, "Pick a dark felt and a bright accent, so text stays readable. The website refuses colours that aren't.");
+    }
+
+    private static string ToHex(Vector3 c) =>
+        $"#{(int)MathF.Round(Math.Clamp(c.X, 0, 1) * 255):x2}{(int)MathF.Round(Math.Clamp(c.Y, 0, 1) * 255):x2}{(int)MathF.Round(Math.Clamp(c.Z, 0, 1) * 255):x2}";
+
+    private static Vector3 FromHex(string hex) => new(
+        Convert.ToInt32(hex.Substring(1, 2), 16) / 255f,
+        Convert.ToInt32(hex.Substring(3, 2), 16) / 255f,
+        Convert.ToInt32(hex.Substring(5, 2), 16) / 255f);
+
+    private static Vector3? ColourOf(JsonElement theme, string name) =>
+        theme.ValueKind == JsonValueKind.Object && theme.TryGetProperty(name, out var value) && value.GetString() is { Length: 7 } hex
+            ? FromHex(hex)
+            : null;
 
     private void DrawLogo(OwnedVenue venue)
     {
@@ -259,6 +344,8 @@ public sealed class VenueTab
                 Finish(() =>
                 {
                     loaded = true;
+                    foreach (var venue in venues)
+                        colours.Remove(venue.Id);
                     if (path == "/api/venue")
                         owned = venues;
                     else
@@ -306,6 +393,7 @@ public sealed class VenueTab
                 d.GetProperty("pending").GetBoolean()));
         }
 
+        var theme = v.TryGetProperty("theme", out var t) ? t : default;
         return new OwnedVenue(
             v.GetProperty("id").GetString() ?? string.Empty,
             v.GetProperty("name").GetString() ?? string.Empty,
@@ -314,11 +402,15 @@ public sealed class VenueTab
             v.GetProperty("ownerName").GetString() ?? string.Empty,
             dealers,
             v.TryGetProperty("logo", out var logo) && logo.ValueKind == JsonValueKind.String ? logo.GetString() : null,
-            v.TryGetProperty("logoPending", out var pending) && pending.ValueKind == JsonValueKind.True);
+            v.TryGetProperty("logoPending", out var pending) && pending.ValueKind == JsonValueKind.True,
+            v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty,
+            ColourOf(theme, "felt"),
+            ColourOf(theme, "accent"));
     }
 
     private sealed record OwnedVenue(
-        string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending);
+        string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending,
+        string Page, Vector3? Felt, Vector3? Accent);
 
     private sealed record VenueDealer(string Key, string Label, bool Pending);
 }
