@@ -22,7 +22,7 @@ namespace TexasPoker;
 public sealed class WebPublisher : IDisposable
 {
     /// <summary>The table server every copy of the plugin uses. Set this to your server before building.</summary>
-    public const string ServerUrl = "https://poker.elenoramdali.com";
+    public const string ServerUrl = "https://eorzeanpoker.app";
 
     private const string Alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private const int TokenLength = 12;
