@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Version>0.3.1.0</Version>
+    <Version>0.3.2.0</Version>
     <Description>A Texas Hold'em dealer table for FFXIV venues.</Description>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -12,5 +12,33 @@
   <ItemGroup>
     <ProjectReference Include="..\TexasPoker.Engine\TexasPoker.Engine.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Dalamud shows a dev plugin's icon from images\icon.png next to the DLL. -->
+    <Content Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- DalamudPackager only zips the files at the top of the output folder, so add the icon to the zip after it. -->
+  <UsingTask TaskName="AddFileToZip" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Zip ParameterType="System.String" Required="true" />
+      <File ParameterType="System.String" Required="true" />
+      <EntryName ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        using (var archive = ZipFile.Open(Zip, ZipArchiveMode.Update))
+        {
+            archive.GetEntry(EntryName)?.Delete();
+            archive.CreateEntryFromFile(File, EntryName);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="AddIconToZip" AfterTargets="DefaultDalamudPackagerRelease" Condition="'$(Configuration)' == 'Release'">
+    <AddFileToZip Zip="$(OutputPath)$(AssemblyName)\latest.zip" File="$(ProjectDir)images\icon.png" EntryName="images/icon.png" />
+  </Target>
 
 </Project>
