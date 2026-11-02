@@ -347,6 +347,7 @@ public sealed class WebPublisher : IDisposable
             bb = Table.BigBlind,
             rake = Table.RakePercent > 0 ? $"{Table.RakePercent:0.##}%" : null,
             lastAction = Table.HandInProgress ? Table.LastAction : results.FirstOrDefault(),
+            actions = Table.HandActions.Select(a => new { street = a.Street.ToString(), text = a.Text }),
             button = buttonShown ? Table.ButtonIndex : -1,
             board = Cards(Table.Board),
             seats,

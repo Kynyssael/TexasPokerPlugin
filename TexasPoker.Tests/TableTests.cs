@@ -214,6 +214,31 @@ public class TableTests
     }
 
     [Fact]
+    public void Hand_actions_list_blinds_and_actions_by_street_and_follow_undo()
+    {
+        var table = NewTable(null, 1000, 1000, 1000);
+        table.StartHand();
+        Assert.Equal(2, table.HandActions.Count);
+        Assert.All(table.HandActions, a => Assert.Equal(Street.Preflop, a.Street));
+
+        table.Act(PlayerAction.Call);
+        table.Act(PlayerAction.Call);
+        table.Act(PlayerAction.Check);
+        Assert.Equal(Street.Flop, table.Street);
+        table.Act(PlayerAction.Check);
+        Assert.Equal(6, table.HandActions.Count);
+        Assert.Equal(new HandAction(Street.Flop, "P1 checks"), table.HandActions[^1]);
+
+        table.Undo();
+        Assert.Equal(5, table.HandActions.Count);
+        Assert.Equal(Street.Preflop, table.HandActions[^1].Street);
+
+        table.CancelHand();
+        table.StartHand();
+        Assert.Equal(2, table.HandActions.Count);
+    }
+
+    [Fact]
     public void Cancel_returns_all_bets()
     {
         var table = NewTable(null, 1000, 1000, 1000);

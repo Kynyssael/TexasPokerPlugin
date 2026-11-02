@@ -32,6 +32,9 @@ public sealed record ActionOptions(
 /// <summary>A pot paid out at the end of a hand. <see cref="Amount"/> is what the winners got, after <see cref="Rake"/>.</summary>
 public sealed record PotResult(string Label, long Amount, IReadOnlyList<Seat> Winners, string? Hand, bool Returned, long Rake);
 
+/// <summary>A blind or player action this hand, in the built-in wording, e.g. "Alice raises to 3,000".</summary>
+public sealed record HandAction(Street Street, string Text);
+
 /// <summary>
 /// A no-limit Texas Hold'em table run by a dealer. Every public method either succeeds completely or
 /// throws <see cref="InvalidOperationException"/> without changing state.
@@ -46,6 +49,7 @@ public sealed class Table
     private string? lastAnnounced;
     private readonly List<Street> dealtStreets = new();
     private List<PotResult> lastResults = new();
+    private readonly List<HandAction> handActions = new();
     private Deck deck = new(Array.Empty<Card>());
     private long handBigBlind;
 
@@ -71,6 +75,9 @@ public sealed class Table
     public IReadOnlyList<Card> Board => board;
 
     public IReadOnlyList<PotResult> LastResults => lastResults;
+
+    /// <summary>The blinds and every action of the current (or last finished) hand, in order. Undo removes them too.</summary>
+    public IReadOnlyList<HandAction> HandActions => handActions;
 
     /// <summary>Use ♠♥♦♣ instead of letters in announcements.</summary>
     public bool SuitSymbols { get; set; }
@@ -217,6 +224,7 @@ public sealed class Table
         lastResults = new List<PotResult>();
         undo.Clear();
         LastAction = null;
+        handActions.Clear();
         deck = deckFactory();
         handBigBlind = BigBlind;
         HandNumber++;
@@ -321,6 +329,7 @@ public sealed class Table
 
         seat.HasActed = true;
         LastAction = lastAnnounced;
+        handActions.Add(new HandAction(Street, lastAnnounced!));
         undo.Push(snapshot);
         ProceedFrom(ActorIndex);
         Flush();
@@ -383,6 +392,7 @@ public sealed class Table
         var posted = Math.Min(amount, seat.Stack);
         PutIn(seat, seat.StreetBet + posted);
         AnnounceAction(kind, seat, posted);
+        handActions.Add(new HandAction(Street, lastAnnounced!));
     }
 
     private void Call(Seat seat)
@@ -722,7 +732,8 @@ public sealed class Table
         ActorIndex,
         CurrentBet,
         MinRaise,
-        LastAction);
+        LastAction,
+        handActions.Count);
 
     private sealed record SeatState(long Stack, long StreetBet, long Contributed, bool Folded, bool AllIn, bool HasActed);
 
@@ -734,7 +745,8 @@ public sealed class Table
         int ActorIndex,
         long CurrentBet,
         long MinRaise,
-        string? LastAction)
+        string? LastAction,
+        int HandActionCount)
     {
         public void Restore(Table table)
         {
@@ -758,6 +770,7 @@ public sealed class Table
             table.CurrentBet = CurrentBet;
             table.MinRaise = MinRaise;
             table.LastAction = LastAction;
+            table.handActions.RemoveRange(HandActionCount, table.handActions.Count - HandActionCount);
         }
     }
 }
