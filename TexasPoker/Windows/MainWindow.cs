@@ -303,7 +303,28 @@ public sealed class MainWindow : Window
             ImGui.SetTooltip("Take no rake from hands that end before the flop.");
         ImGui.EndDisabled();
 
+        ImGui.Separator();
+        changed |= Checkbox("Run it twice when everyone is all-in", () => Table.RunItTwice, v => Table.RunItTwice = v);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("When nobody can bet any more and cards are still to come, the rest of the board is dealt twice\n" +
+                             "and each pot is split between the two boards. Hands run twice don't count for venue promotions.");
+
         ImGui.EndDisabled();
+
+        changed |= Checkbox("Bomb pots", () => Config.BombPotEnabled, v => Config.BombPotEnabled = v);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Adds a Bomb pot option next to Deal: everyone puts in the same amount, no blinds, and the hand starts on the flop.");
+        if (Config.BombPotEnabled)
+        {
+            ImGui.SameLine();
+            var bomb = Config.BombPotAmount;
+            ImGui.SetNextItemWidth(140);
+            if (DealerControls.InputLong("Bomb pot amount (0 = two big blinds)", ref bomb))
+            {
+                Config.BombPotAmount = Math.Max(0, bomb);
+                changed = true;
+            }
+        }
 
         var buyIn = Config.DefaultBuyIn;
         ImGui.SetNextItemWidth(140);

@@ -88,6 +88,22 @@ public sealed class DealerControls
             Large(() => CardUi.Draw(Table.Board, Config.UiSuitSymbols), compact ? 1.2f : 1.4f);
         else if (Table.HandInProgress)
             ImGui.TextColored(Muted, "(no board yet)");
+        if (Table.RanTwice)
+        {
+            ImGui.TextColored(Muted, "Run 2:");
+            ImGui.SameLine();
+            Large(() => CardUi.Draw(Table.SecondBoard, Config.UiSuitSymbols), compact ? 1.2f : 1.4f);
+        }
+
+        if (!compact && plugin.Web.IsConfigured && plugin.Web.Promotions is { } promo)
+        {
+            var parts = new List<string>();
+            if (promo.BadBeat is { } bb)
+                parts.Add($"Bad beat jackpot {bb.Balance:N0} ({bb.Qualifier})");
+            if (promo.HighHand is { } hh)
+                parts.Add(hh.BestPlayer is null ? $"High hand: none yet ({hh.Min}+)" : $"High hand: {hh.BestPlayer}, {hh.BestHand}");
+            ImGui.TextColored(Gold, $"{promo.Venue}: {string.Join("  -  ", parts)}");
+        }
 
         if (Table.HandInProgress && Table.LastAction is { } last)
             ImGui.TextColored(Muted, $"Last: {last}");
@@ -195,13 +211,15 @@ public sealed class DealerControls
                     ? $"{result.Amount:N0} back to {winners} (uncalled)"
                     : $"{result.Label}: {winners} wins {result.Amount:N0}";
                 Large(() => ImGui.TextColored(result.Returned ? Muted : Good, line), compact ? 1.0f : 1.2f);
-                if (!result.Returned && (result.Hand is not null || result.Rake > 0))
+                if (!result.Returned && (result.Hand is not null || result.Rake > 0 || result.Jackpot > 0))
                 {
                     var details = new List<string>();
                     if (result.Hand is { } hand)
                         details.Add(hand);
                     if (result.Rake > 0)
                         details.Add($"rake {result.Rake:N0}");
+                    if (result.Jackpot > 0)
+                        details.Add($"jackpot {result.Jackpot:N0}");
                     ImGui.TextColored(Muted, "    " + string.Join(", ", details));
                 }
             }
@@ -210,10 +228,25 @@ public sealed class DealerControls
         }
 
         var ready = Table.Seats.Count(s => !s.SittingOut && s.Stack > 0);
+        if (Config.BombPotEnabled)
+        {
+            var bomb = Config.BombPotNext;
+            if (ImGui.Checkbox($"Bomb pot ({plugin.BombPotAmount:N0} each)", ref bomb))
+            {
+                Config.BombPotNext = bomb;
+                plugin.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Next hand only: everyone puts in this much, no blinds, straight to the flop. Change the amount in Settings.");
+        }
+
         ImGui.BeginDisabled(ready < 2);
         var width = compact ? 260 : Math.Max(260, ImGui.GetContentRegionAvail().X);
-        if (ColoredButton($"Deal hand #{Table.HandNumber + 1}", CallColor, new Vector2(width, compact ? 34 : 46)))
-            Do(Table.StartHand);
+        var bombNext = Config.BombPotEnabled && Config.BombPotNext;
+        if (ColoredButton(bombNext ? $"Deal hand #{Table.HandNumber + 1}: BOMB POT" : $"Deal hand #{Table.HandNumber + 1}", CallColor,
+                          new Vector2(width, compact ? 34 : 46)))
+            Do(plugin.DealNextHand);
         ImGui.EndDisabled();
         if (ready < 2)
             ImGui.TextColored(Muted, "Need at least two players with chips (Players tab).");

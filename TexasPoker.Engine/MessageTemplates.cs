@@ -27,6 +27,9 @@ public enum MessageKind
     WinUncontested,
     Correction,
     HandCancelled,
+    BombPot,
+    BombPotShort,
+    RunTwice,
 }
 
 /// <summary>A message's default text, a name for the editor, and the placeholders it can use.</summary>
@@ -48,6 +51,11 @@ public sealed class MessageTemplates
             ["hand", "sb", "bb", "button", "players"]),
         new(MessageKind.SmallBlind, "Hand start", "Small blind posted", "{player} posts small blind {amount}{allin}", ActionKeys),
         new(MessageKind.BigBlind, "Hand start", "Big blind posted", "{player} posts big blind {amount}{allin}", ActionKeys),
+        new(MessageKind.BombPot, "Hand start", "Bomb pot",
+            "Hand #{hand}: BOMB POT!\nEveryone puts in {amount}, straight to the flop. Pot: {pot}\nButton: {button}",
+            ["hand", "amount", "pot", "button", "players"]),
+        new(MessageKind.BombPotShort, "Hand start", "Bomb pot, short stack", "{player} puts in {amount} (all-in)",
+            ["player", "amount", "stack"]),
 
         new(MessageKind.Fold, "Actions", "Fold", "{player} folds", ["player", "stack"]),
         new(MessageKind.Check, "Actions", "Check", "{player} checks", ["player", "stack"]),
@@ -62,6 +70,8 @@ public sealed class MessageTemplates
         new(MessageKind.Flop, "Streets", "Flop", "Flop: {board}\nPot: {pot}", StreetKeys),
         new(MessageKind.Turn, "Streets", "Turn", "Turn: {board}\nPot: {pot}", StreetKeys),
         new(MessageKind.River, "Streets", "River", "River: {board}\nPot: {pot}", StreetKeys),
+        new(MessageKind.RunTwice, "Streets", "Running it twice", "All-in: running it twice\nRun 1: {board}\nRun 2: {board2}\nPot: {pot}",
+            ["board", "board2", "pot", "hand"]),
 
         new(MessageKind.Shows, "Showdown", "Player shows their hand", "{player} shows {cards}: {hand}", ["player", "cards", "hand"]),
         new(MessageKind.PotWon, "Showdown", "Pot won", "{pot_name} {amount} to {player} ({hand}){rake}", PotKeys),
@@ -83,6 +93,7 @@ public sealed class MessageTemplates
         ["stack"] = "the player's stack after the action",
         ["pot"] = "the total pot",
         ["board"] = "all board cards",
+        ["board2"] = "the second board, when running it twice",
         ["cards"] = "the new card(s) just dealt, or the player's hole cards",
         ["street"] = "Flop, Turn or River",
         ["hand"] = "the hand number, or the hand's name (e.g. Pair of Eights) at showdown",
@@ -90,8 +101,8 @@ public sealed class MessageTemplates
         ["bb"] = "the big blind",
         ["button"] = "the player on the button",
         ["players"] = "how many players are dealt in",
-        ["pot_name"] = "Main pot or Side pot N",
-        ["rake"] = "\" (rake N)\" when rake was taken, otherwise nothing",
+        ["pot_name"] = "Main pot or Side pot N (with \"(run 1)\" or \"(run 2)\" when running it twice)",
+        ["rake"] = "\" (rake N)\" when rake was taken (and the venue's jackpot cut, if any), otherwise nothing",
     };
 
     private static readonly Dictionary<MessageKind, MessageInfo> ByKind = All.ToDictionary(m => m.Kind);

@@ -70,6 +70,26 @@ public readonly record struct HandValue(HandCategory Category, int Score, IReadO
 
 public static class HandEvaluator
 {
+    /// <summary>
+    /// The best hand that uses both hole cards and three of the board, or null without two hole cards and a flop.
+    /// Venue promotions (high hand, bad beat) count a hand only when both hole cards play.
+    /// </summary>
+    public static HandValue? BestWithBothHoleCards(IReadOnlyList<Card> hole, IReadOnlyList<Card> board)
+    {
+        if (hole.Count != 2 || board.Count < 3)
+            return null;
+
+        HandValue? best = null;
+        foreach (var combo in Combinations(board.Count, 3))
+        {
+            var value = Evaluate([hole[0], hole[1], board[combo[0]], board[combo[1]], board[combo[2]]]);
+            if (best is null || value.Score > best.Value.Score)
+                best = value;
+        }
+
+        return best;
+    }
+
     /// <summary>Returns the best five-card hand out of 5 to 7 cards.</summary>
     public static HandValue Evaluate(IReadOnlyList<Card> cards)
     {

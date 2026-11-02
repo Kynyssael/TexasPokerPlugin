@@ -33,6 +33,9 @@ public sealed class VenueTab
     private string message = string.Empty;
     private bool messageIsError;
     private readonly Dictionary<string, string> newDealer = new();
+    /// <summary>Promotion settings being edited, per venue, until they're saved.</summary>
+    private readonly Dictionary<string, PromoEdit> promoEdits = new();
+
     /// <summary>Colours being picked, per venue, until they're saved.</summary>
     private readonly Dictionary<string, (Vector3 Felt, Vector3 Accent)> colours = new();
 
@@ -166,7 +169,137 @@ public sealed class VenueTab
         DrawLogo(venue);
         ImGui.Spacing();
         DrawColours(venue);
+        ImGui.Spacing();
+        DrawPromotions(venue);
         ImGui.PopID();
+    }
+
+    private void DrawPromotions(OwnedVenue venue)
+    {
+        if (venue.Promotions is not { } saved)
+            return; // an older server
+        if (!promoEdits.TryGetValue(venue.Id, out var e))
+            promoEdits[venue.Id] = e = PromoEdit.From(saved);
+
+        ImGui.TextColored(DealerControls.Gold, "Promotions");
+        ImGui.SameLine();
+        ImGui.TextColored(DealerControls.Muted, "Shared by all your venue's tables. Each can be turned off.");
+        ImGui.BeginDisabled(busy);
+
+        ImGui.Checkbox("High hand bonus", ref e.HighOn);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The best hand shown at showdown (using both hole cards) since you started the round wins your prize.\n" +
+                             "The plugin announces each new high hand; the venue pays the prize.");
+        if (e.HighOn)
+        {
+            ImGui.Indent();
+            Combo("Minimum hand##hh", saved.HighHandMinimums, ref e.HighMin);
+            ImGui.SetNextItemWidth(220);
+            ImGui.InputTextWithHint("Prize##hh", "e.g. 500,000 gil", ref e.Prize, 60);
+            ImGui.TextUnformatted(saved.BestPlayer is null ? "No high hand yet this round." : $"Best: {saved.BestPlayer}, {saved.BestHand}");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("New round"))
+                Send(HttpMethod.Post, $"/api/venue/{venue.Id}/promotions/reset-high-hand", null, "New high hand round started.");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click, e.g. at the start of each event night.");
+            ImGui.Unindent();
+        }
+
+        ImGui.Checkbox("Bad beat jackpot", ref e.BadOn);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Each hand that sees a flop puts a cut into the jackpot. When a big enough hand (using both hole cards)\n" +
+                             "loses the main pot at showdown, the plugin pays the jackpot to the loser, the winner and the table.");
+        if (e.BadOn)
+        {
+            ImGui.Indent();
+            Combo("Losing hand must be at least##bb", saved.BadBeatQualifiers, ref e.Qualifier);
+            ImGui.SetNextItemWidth(120);
+            ImGui.InputFloat("Cut per pot (%)##bb", ref e.DropPercent, 0.25f, 1f, "%.2f");
+            ImGui.SetNextItemWidth(120);
+            DealerControls.InputLong("Cut cap per hand (0 = no cap)##bb", ref e.DropCap);
+            ImGui.Checkbox("Take the cut from the rake (the house pays it)##bb", ref e.FromRake);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Off: the cut comes out of the pot on top of the rake, so the players pay it.");
+            ImGui.TextUnformatted("Split (%):");
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(80);
+            ImGui.InputInt("loser##bb", ref e.Loser, 0, 0);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(80);
+            ImGui.InputInt("winner##bb", ref e.Winner, 0, 0);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(80);
+            ImGui.InputInt("rest of the table##bb", ref e.TableShare, 0, 0);
+            ImGui.SetNextItemWidth(120);
+            ImGui.InputInt("Kept to start the next jackpot (%)##bb", ref e.Seed, 0, 0);
+            ImGui.SetNextItemWidth(120);
+            ImGui.InputInt("Players dealt in, at least##bb", ref e.MinPlayers, 0, 0);
+
+            ImGui.TextColored(DealerControls.Gold, $"Jackpot now: {saved.Balance:N0}");
+            if (saved.LastHit is { } hit)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(DealerControls.Muted, $"(last hit: {hit})");
+            }
+
+            ImGui.SetNextItemWidth(140);
+            DealerControls.InputLong("##newbalance", ref e.NewBalance);
+            ImGui.SameLine();
+            ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("Set jackpot"))
+            {
+                var body = new StringContent(JsonSerializer.Serialize(new { badBeat = new { balance = e.NewBalance } }), Encoding.UTF8, "application/json");
+                Send(HttpMethod.Post, $"/api/venue/{venue.Id}/promotions", body, $"Jackpot set to {e.NewBalance:N0}.");
+            }
+
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click: sets the jackpot to this amount, e.g. to start it with gil the venue adds.");
+            ImGui.Unindent();
+        }
+
+        if (ImGui.Button("Save promotions"))
+        {
+            var body = new StringContent(JsonSerializer.Serialize(new
+            {
+                highHand = new { enabled = e.HighOn, min = e.HighMin, prize = e.Prize.Trim() },
+                badBeat = new
+                {
+                    enabled = e.BadOn,
+                    qualifier = e.Qualifier,
+                    dropPercent = Math.Round(e.DropPercent, 2),
+                    dropCap = e.DropCap,
+                    fromRake = e.FromRake,
+                    split = new { loser = e.Loser, winner = e.Winner, table = e.TableShare },
+                    seedPercent = e.Seed,
+                    minPlayers = e.MinPlayers,
+                },
+            }), Encoding.UTF8, "application/json");
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/promotions", body, "Promotions saved. Your dealers' tables use them from their next hand.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Undo changes"))
+            promoEdits.Remove(venue.Id);
+        ImGui.EndDisabled();
+    }
+
+    private static void Combo(string label, List<(string Id, string Text)> choices, ref string value)
+    {
+        var current = value;
+        var shown = choices.Find(c => c.Id == current).Text ?? value;
+        ImGui.SetNextItemWidth(220);
+        if (!ImGui.BeginCombo(label, shown))
+            return;
+        foreach (var (id, text) in choices)
+        {
+            if (ImGui.Selectable(text, id == value))
+                value = id;
+        }
+
+        ImGui.EndCombo();
     }
 
     /// <summary>A venue page's address with Open and Copy buttons.</summary>
@@ -345,7 +478,10 @@ public sealed class VenueTab
                 {
                     loaded = true;
                     foreach (var venue in venues)
+                    {
                         colours.Remove(venue.Id);
+                        promoEdits.Remove(venue.Id);
+                    }
                     if (path == "/api/venue")
                         owned = venues;
                     else
@@ -405,12 +541,81 @@ public sealed class VenueTab
             v.TryGetProperty("logoPending", out var pending) && pending.ValueKind == JsonValueKind.True,
             v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty,
             ColourOf(theme, "felt"),
-            ColourOf(theme, "accent"));
+            ColourOf(theme, "accent"),
+            v.TryGetProperty("promotions", out var promo) && promo.ValueKind == JsonValueKind.Object ? OwnerPromotions.Parse(promo) : null);
     }
 
     private sealed record OwnedVenue(
         string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending,
-        string Page, Vector3? Felt, Vector3? Accent);
+        string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions);
+
+    /// <summary>The venue's promotion settings as the owner sees them, with the choices for the lists.</summary>
+    private sealed record OwnerPromotions(
+        bool HighOn, string HighMin, string Prize, string? BestPlayer, string? BestHand,
+        bool BadOn, string Qualifier, float DropPercent, long DropCap, bool FromRake, int Loser, int Winner, int TableShare,
+        int Seed, int MinPlayers, long Balance, string? LastHit,
+        List<(string Id, string Text)> HighHandMinimums, List<(string Id, string Text)> BadBeatQualifiers)
+    {
+        public static OwnerPromotions Parse(JsonElement p)
+        {
+            var hh = p.GetProperty("highHand");
+            var bb = p.GetProperty("badBeat");
+            var split = bb.GetProperty("split");
+            var best = hh.TryGetProperty("best", out var b) && b.ValueKind == JsonValueKind.Object ? b : (JsonElement?)null;
+            var hit = bb.TryGetProperty("lastHit", out var h) && h.ValueKind == JsonValueKind.Object
+                ? $"{Text(h, "loser")}'s {Text(h, "loserHand")}, {h.GetProperty("amount").GetInt64():N0}"
+                : null;
+            return new OwnerPromotions(
+                hh.GetProperty("enabled").GetBoolean(), Text(hh, "min"), Text(hh, "prize"),
+                best is { } x ? Text(x, "player") : null, best is { } y ? Text(y, "hand") : null,
+                bb.GetProperty("enabled").GetBoolean(), Text(bb, "qualifier"), (float)bb.GetProperty("dropPercent").GetDouble(),
+                bb.GetProperty("dropCap").GetInt64(), bb.GetProperty("fromRake").GetBoolean(),
+                split.GetProperty("loser").GetInt32(), split.GetProperty("winner").GetInt32(), split.GetProperty("table").GetInt32(),
+                bb.GetProperty("seedPercent").GetInt32(), bb.GetProperty("minPlayers").GetInt32(), bb.GetProperty("balance").GetInt64(), hit,
+                Choices(p, "highHandMinimums"), Choices(p, "badBeatQualifiers"));
+        }
+
+        private static List<(string Id, string Text)> Choices(JsonElement p, string name)
+        {
+            var list = new List<(string, string)>();
+            if (p.TryGetProperty(name, out var array) && array.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in array.EnumerateArray())
+                    list.Add((Text(c, "id"), Text(c, "text")));
+            }
+
+            return list;
+        }
+
+        private static string Text(JsonElement e, string name) =>
+            e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
+    }
+
+    /// <summary>The owner's unsaved promotion settings.</summary>
+    private sealed class PromoEdit
+    {
+        public bool HighOn;
+        public string HighMin = "full-house";
+        public string Prize = string.Empty;
+        public bool BadOn;
+        public string Qualifier = "quads-8";
+        public float DropPercent;
+        public long DropCap;
+        public bool FromRake;
+        public int Loser;
+        public int Winner;
+        public int TableShare;
+        public int Seed;
+        public int MinPlayers;
+        public long NewBalance;
+
+        public static PromoEdit From(OwnerPromotions p) => new()
+        {
+            HighOn = p.HighOn, HighMin = p.HighMin, Prize = p.Prize, BadOn = p.BadOn, Qualifier = p.Qualifier,
+            DropPercent = p.DropPercent, DropCap = p.DropCap, FromRake = p.FromRake, Loser = p.Loser, Winner = p.Winner,
+            TableShare = p.TableShare, Seed = p.Seed, MinPlayers = p.MinPlayers, NewBalance = p.Balance,
+        };
+    }
 
     private sealed record VenueDealer(string Key, string Label, bool Pending);
 }

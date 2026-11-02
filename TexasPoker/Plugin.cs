@@ -110,6 +110,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration.RakePercent = Table.RakePercent;
         Configuration.RakeCap = Table.RakeCap;
         Configuration.NoFlopNoDrop = Table.NoFlopNoDrop;
+        Configuration.RunItTwice = Table.RunItTwice;
         Configuration.HouseEarnings = Table.HouseEarnings;
         Configuration.MessageTemplates = Table.Messages.Overrides.ToDictionary(o => o.Key.ToString(), o => o.Value);
 
@@ -164,6 +165,18 @@ public sealed class Plugin : IDalamudPlugin
         {
             Chat.PrintLocal($"{seat.Name}'s web action didn't go through: {ex.Message}");
         }
+    }
+
+    /// <summary>The bomb pot amount for the next hand: the dealer's amount, or two big blinds.</summary>
+    public long BombPotAmount => Configuration.BombPotAmount > 0 ? Configuration.BombPotAmount : Table.BigBlind * 2;
+
+    /// <summary>Deals the next hand: a bomb pot if the dealer ticked it (once), otherwise a normal hand.</summary>
+    public void DealNextHand()
+    {
+        var bomb = Configuration.BombPotEnabled && Configuration.BombPotNext;
+        Table.StartHand(bomb ? BombPotAmount : 0);
+        if (bomb)
+            Configuration.BombPotNext = false;
     }
 
     public void ToggleDealerBar() => dealerBarWindow.Toggle();
@@ -333,6 +346,7 @@ public sealed class Plugin : IDalamudPlugin
         Table.RakePercent = Configuration.RakePercent;
         Table.RakeCap = Configuration.RakeCap;
         Table.NoFlopNoDrop = Configuration.NoFlopNoDrop;
+        Table.RunItTwice = Configuration.RunItTwice;
         Table.HouseEarnings = Configuration.HouseEarnings;
         foreach (var (kind, text) in Configuration.MessageTemplates)
         {
@@ -383,7 +397,8 @@ public sealed class Plugin : IDalamudPlugin
             case "deal":
                 try
                 {
-                    Table.StartHand();
+                    DealNextHand();
+                    Save();
                 }
                 catch (InvalidOperationException ex)
                 {

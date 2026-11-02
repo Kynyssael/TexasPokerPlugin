@@ -52,6 +52,15 @@ public sealed class WebPublisher : IDisposable
     private DateTime nextActionSocketTry = DateTime.MinValue;
     private int actionSocketFailures;
 
+    // Venue promotions (high hand, bad beat jackpot) for this table, from the server's answer to each update.
+    private volatile VenuePromotions? promotions;
+    private int lastReportedHand;
+    private readonly System.Collections.Generic.Queue<(int Hand, long Drop, string Json)> reports = new();
+    private bool reporting;
+    private int reportTries;
+    private DateTime nextReportTry = DateTime.MinValue;
+    private readonly System.Collections.Generic.List<(string Name, string World, long Amount, string Why)> pendingBonuses = new();
+
     // Set by the send loop, handled on the framework thread where the config is safe to change.
     private volatile bool claimedNow;
     private volatile bool retakeId;
@@ -61,6 +70,7 @@ public sealed class WebPublisher : IDisposable
         this.plugin = plugin;
         this.framework = framework;
         labels = new TableView(plugin);
+        lastReportedHand = plugin.Table.HandNumber;
         framework.Update += OnUpdate;
     }
 
@@ -68,6 +78,9 @@ public sealed class WebPublisher : IDisposable
     public string Status { get; private set; } = "Not sent yet";
 
     public bool LastSendFailed { get; private set; }
+
+    /// <summary>The table's venue promotions, or null when its venue runs none (or it has no venue).</summary>
+    public VenuePromotions? Promotions => promotions;
 
     private Configuration Config => plugin.Configuration;
 
@@ -197,6 +210,12 @@ public sealed class WebPublisher : IDisposable
         if (IsConfigured && DateTime.UtcNow >= nextHeartbeat)
             Push();
 
+        ApplyJackpotCut();
+        QueueHandReport();
+        if (reports.Count > 0 && !reporting && DateTime.UtcNow >= nextReportTry)
+            SendHandReport();
+        PayPendingBonuses();
+
         var wantSocket = IsConfigured && Config.WebActions;
         if (actionSocket is not null && (!wantSocket || actionSocketTable != Config.WebTableId))
             StopActionSocket();
@@ -206,6 +225,174 @@ public sealed class WebPublisher : IDisposable
         if (IsConfigured && Config.WebActions && !actionSocketLive && Table.HandInProgress && !fetchingActions && DateTime.UtcNow >= nextActionFetch)
             FetchActions();
     }
+
+    // ---- venue promotions ----------------------------------------------------------------------
+
+    /// <summary>Between hands, takes the venue's jackpot cut settings (or none) for the next hand.</summary>
+    private void ApplyJackpotCut()
+    {
+        if (Table.HandInProgress)
+            return;
+        var badBeat = IsConfigured ? promotions?.BadBeat : null;
+        Table.JackpotDropPercent = badBeat?.DropPercent ?? 0;
+        Table.JackpotDropCap = badBeat?.DropCap ?? 0;
+        Table.JackpotDropFromRake = badBeat?.FromRake ?? false;
+    }
+
+    /// <summary>Once per finished hand, queues its report for the venue (if it runs promotions, or a jackpot cut was taken).</summary>
+    private void QueueHandReport()
+    {
+        if (Table.Street != Street.HandOver || Table.HandNumber == lastReportedHand)
+            return;
+        lastReportedHand = Table.HandNumber;
+        if (!IsConfigured || Table.LastHandCancelled || (promotions is null && Table.LastJackpotDrop == 0))
+            return;
+        reports.Enqueue((Table.HandNumber, Table.LastJackpotDrop, BuildHandReport()));
+    }
+
+    private string BuildHandReport()
+    {
+        static string C(Card c) => c.RankText + c.SuitText(false);
+        static object? V(HandValue? v) => v is { } x ? new { cat = (int)x.Category, ranks = x.Ranks, score = x.Score, text = x.Describe() } : null;
+        return JsonSerializer.Serialize(new
+        {
+            hand = Table.HandNumber,
+            dealtIn = Table.DealtIn,
+            drop = Table.LastJackpotDrop,
+            ranTwice = Table.RanTwice,
+            bombPot = Table.IsBombPot,
+            cancelled = Table.LastHandCancelled,
+            title = Config.WebTableTitle.Trim().Length > 0 ? Config.WebTableTitle.Trim() : "Texas Hold'em",
+            board = Table.Board.Select(C),
+            players = Table.Seats.Where(s => s.InHand).Select(s => new { name = s.Name, world = s.World }),
+            shown = Table.LastShowdown.Select(h => new
+            {
+                name = h.Seat.Name,
+                world = h.Seat.World,
+                cards = h.Seat.HoleCards.Select(C),
+                best = V(h.Best),
+                both = V(h.WithBothHoleCards),
+                wonMain = h.WonMainPot,
+            }),
+        });
+    }
+
+    private void SendHandReport()
+    {
+        var (hand, drop, json) = reports.Peek();
+        reporting = true;
+        var url = $"{BaseUrl}/api/t/{Config.WebTableId}/hand";
+        var session = Config.AuthSessionKey;
+        _ = Task.Run(async () =>
+        {
+            string? answer = null;
+            var giveUp = false;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                    answer = text;
+                else if ((int)response.StatusCode is >= 400 and < 500 and not 429)
+                    giveUp = true; // refused (an older server, or not this dealer's table): retrying won't help
+            }
+            catch (Exception)
+            {
+                // Offline for now: retried below.
+            }
+
+            await framework.RunOnFrameworkThread(() =>
+            {
+                reporting = false;
+                if (answer is not null || giveUp || ++reportTries >= 5)
+                {
+                    reports.Dequeue();
+                    reportTries = 0;
+                    if (answer is not null)
+                        HandleHandResult(answer);
+                    else if (drop > 0)
+                        plugin.Chat.PrintLocal($"Couldn't report hand #{hand} to your venue: its jackpot cut of {drop:N0} wasn't added. Tell the venue's owner.");
+                    return;
+                }
+
+                nextReportTry = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            }).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>Announces a new high hand or a bad beat, and queues the jackpot's payouts.</summary>
+    private void HandleHandResult(string text)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("promotions", out var promo))
+                promotions = VenuePromotions.Parse(promo);
+
+            if (root.TryGetProperty("highHand", out var hh) && hh.ValueKind == JsonValueKind.Object)
+            {
+                var prize = Str(hh, "prize");
+                plugin.Chat.SayToTable([$"New high hand: {Str(hh, "player")} with {Str(hh, "hand")}" + (prize.Length > 0 ? $" (prize: {prize})" : string.Empty)]);
+            }
+
+            if (root.TryGetProperty("badBeat", out var bb) && bb.ValueKind == JsonValueKind.Object)
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                foreach (var p in bb.GetProperty("payouts").EnumerateArray())
+                {
+                    var amount = p.GetProperty("amount").GetInt64();
+                    pendingBonuses.Add((Str(p, "name"), Str(p, "world"), amount, "bad beat jackpot"));
+                    parts.Add($"{Str(p, "name")} {amount:N0}");
+                }
+
+                plugin.Chat.SayToTable([
+                    $"BAD BEAT JACKPOT! {Str(bb, "loser")}'s {Str(bb, "loserHand")} lost to {Str(bb, "winner")}'s {Str(bb, "winnerHand")}.",
+                    $"Jackpot {bb.GetProperty("total").GetInt64():N0}: {string.Join(", ", parts)}",
+                ]);
+                PayPendingBonuses();
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or System.Collections.Generic.KeyNotFoundException)
+        {
+            // An answer this plugin doesn't understand: nothing to announce.
+        }
+    }
+
+    /// <summary>Pays queued bonuses into stacks; a player in the hand now is paid when it ends.</summary>
+    private void PayPendingBonuses()
+    {
+        if (pendingBonuses.Count == 0)
+            return;
+        var paid = false;
+        for (var i = pendingBonuses.Count - 1; i >= 0; i--)
+        {
+            var (name, world, amount, why) = pendingBonuses[i];
+            var seat = Table.Seats.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                                                       s.World.Equals(world, StringComparison.OrdinalIgnoreCase));
+            if (seat is null)
+            {
+                plugin.Chat.PrintLocal($"{name}@{world} isn't seated any more: pay them {amount:N0} ({why}) by hand.");
+                pendingBonuses.RemoveAt(i);
+                continue;
+            }
+
+            if (Table.HandInProgress && seat.InHand)
+                continue;
+            Table.AwardBonus(seat, amount);
+            pendingBonuses.RemoveAt(i);
+            paid = true;
+        }
+
+        if (paid)
+            plugin.Save();
+    }
+
+    private static string Str(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
 
     private void StartActionSocket()
     {
@@ -426,6 +613,9 @@ public sealed class WebPublisher : IDisposable
                 {
                     Status = $"Updated at {DateTime.Now:HH:mm:ss}";
                     claimedNow = !Config.WebTableClaimed;
+                    // Newer servers answer with the venue's promotions; older ones just say "ok".
+                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    promotions = VenuePromotions.FromPushAnswer(body);
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && !Config.WebTableClaimed)
                 {
@@ -496,6 +686,8 @@ public sealed class WebPublisher : IDisposable
             actions = Table.HandActions.Select(a => new { street = a.Street.ToString(), text = a.Text }),
             button = buttonShown ? Table.ButtonIndex : -1,
             board = Cards(Table.Board),
+            board2 = Cards(Table.SecondBoard),
+            bombPot = Table.IsBombPot,
             seats,
             results = Table.HandInProgress ? [] : results,
             resultsHand = Table.HandNumber,

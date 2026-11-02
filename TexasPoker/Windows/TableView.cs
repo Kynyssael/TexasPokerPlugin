@@ -133,32 +133,44 @@ public sealed class TableView
             return;
         }
 
-        var board = Table.Board;
-        if (Table.HandInProgress || board.Count > 0)
+        // Run twice: both boards, smaller, one above the other.
+        IReadOnlyList<Card>[] boards = Table.RanTwice ? [Table.Board, Table.SecondBoard] : [Table.Board];
+        var shrink = boards.Length > 1 ? 0.72f : 1f;
+        var card = BoardCard * shrink;
+        var gap = BoardGap * shrink;
+        var height = (boards.Length * card.Y) + ((boards.Length - 1) * 6);
+        var top = center.Y - (height / 2) - 8;
+        if (Table.HandInProgress || Table.Board.Count > 0)
         {
-            var total = (BoardCard.X * 5) + (BoardGap * 4);
+            var total = (card.X * 5) + (gap * 4);
             var x = center.X - (total / 2);
-            for (var i = 0; i < 5; i++)
+            for (var r = 0; r < boards.Length; r++)
             {
-                var min = new Vector2(x + (i * (BoardCard.X + BoardGap)), center.Y - (BoardCard.Y / 2) - 8);
-                if (i < board.Count)
-                    DrawCard(draw, min, BoardCard, board[i], 1.8f);
-                else
-                    draw.AddRect(min, min + BoardCard, FeltLine, 4, ImDrawFlags.None, 1.5f);
+                for (var i = 0; i < 5; i++)
+                {
+                    var min = new Vector2(x + (i * (card.X + gap)), top + (r * (card.Y + 6)));
+                    if (i < boards[r].Count)
+                        DrawCard(draw, min, card, boards[r][i], 1.8f * shrink);
+                    else
+                        draw.AddRect(min, min + card, FeltLine, 4, ImDrawFlags.None, 1.5f);
+                }
             }
         }
 
+        var above = new Vector2(center.X, top - 22);
+        var below = new Vector2(center.X, top + height + 12);
         if (Table.HandInProgress)
         {
-            CenteredText(draw, center + new Vector2(0, (BoardCard.Y / 2) + 4), GoldU, $"Pot {Table.Pot:N0}", 1.3f);
-            CenteredText(draw, center - new Vector2(0, (BoardCard.Y / 2) + 30), MutedU, $"Hand #{Table.HandNumber}  -  {Table.Street}");
+            CenteredText(draw, below, GoldU, $"Pot {Table.Pot:N0}", 1.3f);
+            CenteredText(draw, above, MutedU, $"Hand #{Table.HandNumber}  -  {Table.Street}{(Table.IsBombPot ? "  -  BOMB POT" : string.Empty)}");
         }
         else
         {
-            var title = Table.Street == Street.HandOver ? $"Hand #{Table.HandNumber} finished" : "Texas Hold'em";
-            CenteredText(draw, center - new Vector2(0, (BoardCard.Y / 2) + 30), MutedU, title);
-            CenteredText(draw, center + new Vector2(0, (BoardCard.Y / 2) + 4), MutedU,
-                         $"Blinds {Table.SmallBlind:N0}/{Table.BigBlind:N0}");
+            var title = Table.Street == Street.HandOver
+                ? $"Hand #{Table.HandNumber} finished{(Table.RanTwice ? "  -  ran twice" : string.Empty)}"
+                : "Texas Hold'em";
+            CenteredText(draw, above, MutedU, title);
+            CenteredText(draw, below, MutedU, $"Blinds {Table.SmallBlind:N0}/{Table.BigBlind:N0}");
         }
     }
 

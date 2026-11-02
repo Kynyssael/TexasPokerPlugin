@@ -156,6 +156,20 @@ public sealed class ReferenceWindow : Window
             lines.Add($"House rake: {Table.RakePercent:0.##}% of each pot{cap}.{noFlop}");
         }
 
+        if (Table.RunItTwice)
+            lines.Add("All-in with cards still to come? The rest of the board is dealt twice, and each pot is split between the two boards.");
+        if (Config.BombPotEnabled)
+            lines.Add("Bomb pots: now and then everyone puts in the same amount, there are no blinds, and the hand starts on the flop.");
+        if (plugin.Web.IsConfigured && plugin.Web.Promotions is { } promo)
+        {
+            if (promo.BadBeat is { } bb)
+                lines.Add($"{promo.Venue} bad beat jackpot ({bb.Balance:N0} now): lose at showdown with {bb.Qualifier}, using both your cards, " +
+                          $"with at least {bb.MinPlayers} players dealt in, and the jackpot is shared by you, the winner and the table.");
+            if (promo.HighHand is { } hh)
+                lines.Add($"{promo.Venue} high hand: the best hand shown at showdown ({hh.Min} or better, using both your cards)" +
+                          (hh.Prize.Length > 0 ? $" wins {hh.Prize}." : " wins a prize."));
+        }
+
         lines.Add($"Buy-in is {Config.DefaultBuyIn:N0} gil, traded to the dealer. Cash out with the dealer between hands.");
         return lines;
     }

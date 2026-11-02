@@ -29,8 +29,17 @@ public sealed record ActionOptions(
     long MinRaiseTo,
     long MaxRaiseTo);
 
-/// <summary>A pot paid out at the end of a hand. <see cref="Amount"/> is what the winners got, after <see cref="Rake"/>.</summary>
-public sealed record PotResult(string Label, long Amount, IReadOnlyList<Seat> Winners, string? Hand, bool Returned, long Rake);
+/// <summary>
+/// A pot paid out at the end of a hand. <see cref="Amount"/> is what the winners got, after <see cref="Rake"/> (the
+/// house's part) and <see cref="Jackpot"/> (the venue's bad beat jackpot cut).
+/// </summary>
+public sealed record PotResult(string Label, long Amount, IReadOnlyList<Seat> Winners, string? Hand, bool Returned, long Rake, long Jackpot = 0);
+
+/// <summary>
+/// A hand shown at showdown: its best hand, the best one using both hole cards (what venue promotions count),
+/// and whether it won (a share of) the main pot.
+/// </summary>
+public sealed record ShowdownHand(Seat Seat, HandValue Best, HandValue? WithBothHoleCards, bool WonMainPot);
 
 /// <summary>A blind or player action this hand, in the built-in wording, e.g. "Alice raises to 3,000".</summary>
 public sealed record HandAction(Street Street, string Text);
@@ -44,6 +53,8 @@ public sealed class Table
     private readonly Func<Deck> deckFactory;
     private readonly List<Seat> seats = new();
     private readonly List<Card> board = new();
+    private readonly List<Card> secondBoard = new();
+    private List<ShowdownHand> lastShowdown = new();
     private readonly Stack<Snapshot> undo = new();
     private readonly List<string> pending = new();
     private string? lastAnnounced;
@@ -73,6 +84,38 @@ public sealed class Table
     public IReadOnlyList<Seat> Seats => seats;
 
     public IReadOnlyList<Card> Board => board;
+
+    /// <summary>The second board when the hand was run twice (all-in with cards to come); otherwise empty.</summary>
+    public IReadOnlyList<Card> SecondBoard => secondBoard;
+
+    public bool RanTwice => secondBoard.Count > 0;
+
+    /// <summary>Deal the rest of the board twice when everyone left is all-in, splitting each pot between the runs.</summary>
+    public bool RunItTwice { get; set; }
+
+    /// <summary>The current (or last) hand is a bomb pot: everyone put in the same amount and it started on the flop.</summary>
+    public bool IsBombPot { get; private set; }
+
+    /// <summary>How many players were dealt into the current (or last) hand.</summary>
+    public int DealtIn { get; private set; }
+
+    /// <summary>The last hand was cancelled (misdeal): nothing was won or taken.</summary>
+    public bool LastHandCancelled { get; private set; }
+
+    /// <summary>The hands shown at the last showdown (on the first board if it was run twice); empty if nobody showed.</summary>
+    public IReadOnlyList<ShowdownHand> LastShowdown => lastShowdown;
+
+    /// <summary>Percentage of each contested pot that goes to the venue's bad beat jackpot; 0 is off. Only from hands that see a flop.</summary>
+    public decimal JackpotDropPercent { get; set; }
+
+    /// <summary>Most taken for the jackpot from one hand; 0 means no cap.</summary>
+    public long JackpotDropCap { get; set; }
+
+    /// <summary>The jackpot cut comes out of the rake (the house pays it) instead of on top of it (the players do).</summary>
+    public bool JackpotDropFromRake { get; set; }
+
+    /// <summary>What the last hand put into the jackpot.</summary>
+    public long LastJackpotDrop { get; private set; }
 
     public IReadOnlyList<PotResult> LastResults => lastResults;
 
@@ -191,6 +234,17 @@ public sealed class Table
         seats.Insert(to, seat);
     }
 
+    /// <summary>Pays a bonus (a jackpot, a high hand prize) into a player's stack. It isn't a buy-in, so it counts as winnings.</summary>
+    public void AwardBonus(Seat seat, long amount)
+    {
+        if (amount <= 0)
+            throw new InvalidOperationException("A bonus must be more than 0.");
+        if (HandInProgress && seat.InHand)
+            throw new InvalidOperationException("Can't pay a bonus to a player who is in the hand.");
+
+        seat.Stack += amount;
+    }
+
     /// <summary>Adds gil to a player's stack (a rebuy). Negative amounts pay gil back out.</summary>
     public void AdjustChips(Seat seat, long amount)
     {
@@ -203,12 +257,18 @@ public sealed class Table
         seat.TotalBuyIn += amount;
     }
 
-    public void StartHand()
+    /// <summary>
+    /// Deals the next hand. With <paramref name="bombPot"/> above 0 it's a bomb pot: no blinds, everyone puts in that
+    /// much (or all they have), and the hand starts on the flop.
+    /// </summary>
+    public void StartHand(long bombPot = 0)
     {
         if (HandInProgress)
             throw new InvalidOperationException("A hand is already in progress.");
         if (BigBlind <= 0 || SmallBlind < 0 || SmallBlind > BigBlind)
             throw new InvalidOperationException("Blinds must satisfy 0 <= small blind <= big blind, big blind > 0.");
+        if (bombPot < 0)
+            throw new InvalidOperationException("The bomb pot amount can't be negative.");
 
         var eligible = seats.Count(s => !s.SittingOut && s.Stack > 0);
         if (eligible < 2)
@@ -221,7 +281,9 @@ public sealed class Table
         }
 
         board.Clear();
+        secondBoard.Clear();
         lastResults = new List<PotResult>();
+        lastShowdown = new List<ShowdownHand>();
         undo.Clear();
         LastAction = null;
         handActions.Clear();
@@ -229,8 +291,18 @@ public sealed class Table
         handBigBlind = BigBlind;
         HandNumber++;
         Street = Street.Preflop;
+        IsBombPot = bombPot > 0;
+        DealtIn = eligible;
+        LastHandCancelled = false;
+        LastJackpotDrop = 0;
 
         ButtonIndex = NextIndex(ButtonIndex, s => s.InHand);
+        if (IsBombPot)
+        {
+            StartBombPot(bombPot, eligible);
+            return;
+        }
+
         if (eligible == 2)
         {
             // Heads-up: the button posts the small blind and acts first preflop.
@@ -250,6 +322,13 @@ public sealed class Table
         CurrentBet = BigBlind;
         MinRaise = BigBlind;
 
+        DealHoleCards(eligible);
+        ProceedFrom(BigBlindIndex);
+        Flush();
+    }
+
+    private void DealHoleCards(int eligible)
+    {
         for (var round = 0; round < 2; round++)
         {
             var index = ButtonIndex;
@@ -262,8 +341,36 @@ public sealed class Table
 
         foreach (var seat in seats.Where(s => s.InHand))
             HoleCardsDealt?.Invoke(seat, seat.HoleCards);
+    }
 
-        ProceedFrom(BigBlindIndex);
+    /// <summary>Everyone puts in the same amount (or all they have), then the flop comes straight away.</summary>
+    private void StartBombPot(long amount, int eligible)
+    {
+        SmallBlindIndex = -1;
+        BigBlindIndex = -1;
+        var index = ButtonIndex;
+        var shorts = new List<(Seat Seat, long Amount)>();
+        for (var n = 0; n < eligible; n++)
+        {
+            index = NextIndex(index, s => s.InHand);
+            var seat = seats[index];
+            var put = Math.Min(amount, seat.Stack);
+            PutIn(seat, put);
+            if (put < amount)
+                shorts.Add((seat, put));
+        }
+
+        Announce(MessageKind.BombPot, ("hand", $"{HandNumber}"), ("amount", amount), ("pot", Pot),
+                 ("button", seats[ButtonIndex].Name), ("players", $"{eligible}"));
+        handActions.Add(new HandAction(Street, $"Bomb pot: everyone puts in {amount:N0}"));
+        foreach (var (seat, put) in shorts)
+        {
+            Announce(MessageKind.BombPotShort, ("player", seat.Name), ("amount", put), ("stack", seat.Stack));
+            handActions.Add(new HandAction(Street, lastAnnounced!));
+        }
+
+        DealHoleCards(eligible);
+        EndStreet();
         Flush();
     }
 
@@ -361,6 +468,9 @@ public sealed class Table
         }
 
         EndHand();
+        LastHandCancelled = true;
+        LastJackpotDrop = 0;
+        lastShowdown = new List<ShowdownHand>();
         Announce(MessageKind.HandCancelled, ("hand", $"{HandNumber}"));
         Flush();
     }
@@ -483,6 +593,14 @@ public sealed class Table
         CurrentBet = 0;
         MinRaise = handBigBlind;
 
+        // Everyone left is all-in with cards to come: deal the rest twice, if the table runs it twice.
+        if (RunItTwice && Street is Street.Preflop or Street.Flop or Street.Turn &&
+            seats.Count(s => s.CanAct) <= 1 && seats.Count(s => s.Contending) >= 2)
+        {
+            RunTwice();
+            return;
+        }
+
         var dealtFrom = board.Count;
         switch (Street)
         {
@@ -514,6 +632,35 @@ public sealed class Table
         ProceedFrom(ButtonIndex);
     }
 
+    /// <summary>Deals the rest of the board twice from the same deck (burning as usual), then goes to the showdown.</summary>
+    private void RunTwice()
+    {
+        List<Card> RunOut()
+        {
+            var run = board.ToList();
+            while (run.Count < 5)
+            {
+                deck.Draw();
+                if (run.Count == 0)
+                    run.AddRange([deck.Draw(), deck.Draw(), deck.Draw()]);
+                else
+                    run.Add(deck.Draw());
+            }
+
+            return run;
+        }
+
+        var first = RunOut();
+        var second = RunOut();
+        board.Clear();
+        board.AddRange(first);
+        secondBoard.AddRange(second);
+        Street = Street.River;
+        Announce(MessageKind.RunTwice, ("board", Card.Join(first, SuitSymbols)), ("board2", Card.Join(second, SuitSymbols)),
+                 ("pot", Pot), ("hand", $"{HandNumber}"));
+        Showdown();
+    }
+
     /// <summary>The seat's best hand using the board so far, or null before the flop.</summary>
     public HandValue? CurrentHand(Seat seat) =>
         board.Count >= 3 && seat.HoleCards.Count == 2
@@ -527,12 +674,12 @@ public sealed class Table
         // The part of the winner's bet nobody called is just handed back, so it isn't raked.
         var highestOther = seats.Where(s => s != winner).Select(s => s.Contributed).DefaultIfEmpty(0).Max();
         var uncalled = Math.Max(0, winner.Contributed - highestOther);
-        var rake = TakeRake(Pot - uncalled);
-        var amount = Pot - rake;
+        var (house, jackpot) = TakeCuts(Pot - uncalled);
+        var amount = Pot - house - jackpot;
 
         winner.Stack += amount;
-        lastResults = [new PotResult("Pot", amount, [winner], null, false, rake)];
-        Announce(MessageKind.WinUncontested, ("player", winner.Name), ("amount", amount), ("rake", RakeSuffix(rake)));
+        lastResults = [new PotResult("Pot", amount, [winner], null, false, house, jackpot)];
+        Announce(MessageKind.WinUncontested, ("player", winner.Name), ("amount", amount), ("rake", RakeSuffix(house, jackpot)));
         EndHand();
     }
 
@@ -554,26 +701,63 @@ public sealed class Table
         return rake;
     }
 
-    private static string RakeSuffix(long rake) => rake > 0 ? $" (rake {rake:N0})" : string.Empty;
+    /// <summary>
+    /// The rake and the jackpot cut for this hand's contested amount. The house's part is added to
+    /// <see cref="HouseEarnings"/>; both come out of the pot. A cut from the rake is part of the rake, not extra.
+    /// </summary>
+    private (long House, long Jackpot) TakeCuts(long contested)
+    {
+        var rake = TakeRake(contested);
+        long drop = 0;
+        if (JackpotDropPercent > 0 && contested > 0 && board.Count > 0)
+        {
+            drop = (long)Math.Floor(contested * JackpotDropPercent / 100m);
+            if (JackpotDropCap > 0)
+                drop = Math.Min(drop, JackpotDropCap);
+            if (JackpotDropFromRake)
+            {
+                drop = Math.Min(drop, rake);
+                HouseEarnings -= drop;
+                rake -= drop;
+            }
+        }
+
+        LastJackpotDrop = drop;
+        return (rake, drop);
+    }
+
+    private static string RakeSuffix(long rake, long jackpot = 0) => (rake, jackpot) switch
+    {
+        ( > 0, > 0) => $" (rake {rake:N0}, jackpot {jackpot:N0})",
+        ( > 0, _) => $" (rake {rake:N0})",
+        (_, > 0) => $" (jackpot {jackpot:N0})",
+        _ => string.Empty,
+    };
 
     private void Showdown()
     {
         var contenders = seats.Where(s => s.Contending).ToList();
-        var values = contenders.ToDictionary(s => s, s => HandEvaluator.Evaluate(s.HoleCards.Concat(board).ToList()));
+        var runs = RanTwice ? new[] { board.ToList(), secondBoard.ToList() } : new[] { board.ToList() };
+        var values = runs.Select(run => contenders.ToDictionary(s => s, s => HandEvaluator.Evaluate(s.HoleCards.Concat(run).ToList()))).ToArray();
         foreach (var seat in contenders)
         {
             // When two hands read the same (both "Pair of Eights"), show kickers so players can see why.
-            var value = values[seat];
-            var lookalike = contenders.Any(o => o != seat && values[o].Describe() == value.Describe());
+            var described = values.Select(v =>
+            {
+                var value = v[seat];
+                var lookalike = contenders.Any(o => o != seat && v[o].Describe() == value.Describe());
+                return lookalike ? value.DescribeWithKickers() : value.Describe();
+            });
             Announce(MessageKind.Shows, ("player", seat.Name), ("cards", Card.Join(seat.HoleCards, SuitSymbols)),
-                     ("hand", lookalike ? value.DescribeWithKickers() : value.Describe()));
+                     ("hand", string.Join(" / ", described)));
         }
 
         var results = new List<PotResult>();
         var pots = BuildPots();
 
-        // The rake is worked out on all contested pots together and taken from the main pot first.
-        var rakeLeft = TakeRake(pots.Where(p => p.Eligible.Count > 1).Sum(p => p.Amount));
+        // The rake and jackpot cut are worked out on all contested pots together and taken from the main pot first.
+        var (houseLeft, jackpotLeft) = TakeCuts(pots.Where(p => p.Eligible.Count > 1).Sum(p => p.Amount));
+        var mainWinners = new HashSet<Seat>();
         for (var i = 0; i < pots.Count; i++)
         {
             var (gross, eligible) = pots[i];
@@ -586,31 +770,48 @@ public sealed class Table
                 continue;
             }
 
-            var rake = Math.Min(rakeLeft, gross);
-            rakeLeft -= rake;
-            var amount = gross - rake;
+            var house = Math.Min(houseLeft, gross);
+            houseLeft -= house;
+            var jackpot = Math.Min(jackpotLeft, gross - house);
+            jackpotLeft -= jackpot;
+            var amount = gross - house - jackpot;
 
-            var best = eligible.Max(s => values[s].Score);
-            var winners = OrderFromButton(eligible.Where(s => values[s].Score == best)).ToList();
-            var share = amount / winners.Count;
-            var oddChips = amount % winners.Count;
-            for (var w = 0; w < winners.Count; w++)
-                winners[w].Stack += share + (w < oddChips ? 1 : 0);
-
-            var label = i == 0 ? "Main pot" : $"Side pot {i}";
-            var hand = values[winners[0]].Describe();
-            if (winners.Count == 1)
+            // Run twice: each run wins half the pot (the first run gets the odd chip).
+            for (var r = 0; r < runs.Length; r++)
             {
-                var runnerUp = eligible.Where(s => s != winners[0]).Select(s => values[s]).MaxBy(v => v.Score);
-                if (values[winners[0]].DecidingKicker(runnerUp) is { } kicker)
-                    hand += $", {kicker}";
-            }
+                var runAmount = amount / runs.Length + (r < amount % runs.Length ? 1 : 0);
+                var v = values[r];
+                var best = eligible.Max(s => v[s].Score);
+                var winners = OrderFromButton(eligible.Where(s => v[s].Score == best)).ToList();
+                var share = runAmount / winners.Count;
+                var oddChips = runAmount % winners.Count;
+                for (var w = 0; w < winners.Count; w++)
+                    winners[w].Stack += share + (w < oddChips ? 1 : 0);
+                if (i == 0 && r == 0)
+                    mainWinners.UnionWith(winners);
 
-            results.Add(new PotResult(label, amount, winners, hand, false, rake));
-            Announce(winners.Count == 1 ? MessageKind.PotWon : MessageKind.PotSplit, ("pot_name", label), ("amount", amount),
-                     ("player", string.Join(", ", winners.Select(w => w.Name))), ("hand", hand), ("rake", RakeSuffix(rake)));
+                var label = (i == 0 ? "Main pot" : $"Side pot {i}") + (runs.Length > 1 ? $" (run {r + 1})" : string.Empty);
+                var hand = v[winners[0]].Describe();
+                if (winners.Count == 1)
+                {
+                    var runnerUp = eligible.Where(s => s != winners[0]).Select(s => v[s]).MaxBy(x => x.Score);
+                    if (v[winners[0]].DecidingKicker(runnerUp) is { } kicker)
+                        hand += $", {kicker}";
+                }
+
+                // The house and jackpot cuts are shown once, on the first run.
+                var shownHouse = r == 0 ? house : 0;
+                var shownJackpot = r == 0 ? jackpot : 0;
+                results.Add(new PotResult(label, runAmount, winners, hand, false, shownHouse, shownJackpot));
+                Announce(winners.Count == 1 ? MessageKind.PotWon : MessageKind.PotSplit, ("pot_name", label), ("amount", runAmount),
+                         ("player", string.Join(", ", winners.Select(w => w.Name))), ("hand", hand),
+                         ("rake", RakeSuffix(shownHouse, shownJackpot)));
+            }
         }
 
+        lastShowdown = contenders
+            .Select(s => new ShowdownHand(s, values[0][s], HandEvaluator.BestWithBothHoleCards(s.HoleCards, runs[0]), mainWinners.Contains(s)))
+            .ToList();
         lastResults = results;
         EndHand();
     }

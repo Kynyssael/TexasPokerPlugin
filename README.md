@@ -97,6 +97,35 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
 
+### Bomb pots and running it twice
+
+Both are off until you turn them on in the **Settings** tab, and any dealer can use them.
+
+- **Bomb pots:** tick *Bomb pots* and set the amount (0 = two big blinds). A *Bomb pot* box then sits above *Deal*:
+  tick it and the next hand is a bomb pot. Everyone puts in that amount (or all they have), there are no blinds, and
+  the hand starts on the flop. The box clears itself after that hand.
+- **Run it twice:** tick *Run it twice when everyone is all-in*. When nobody can bet any more and cards are still to
+  come, the rest of the board is dealt twice, and each pot is split between the two boards (the first gets the odd
+  chip). The website shows both boards. Hands run twice don't count for venue promotions.
+
+### Venue promotions (venue licence)
+
+A venue's owner can run a **high hand bonus** and a **bad beat jackpot**, shared by all of the venue's tables, in the
+**Promotions** part of the Venue tab. Each is off until the owner turns it on and clicks *Save promotions*.
+
+- **High hand:** the best hand shown at showdown, using both hole cards, since the owner started the round (Ctrl+click
+  *New round*, e.g. each event night) wins the owner's prize. The owner picks the minimum hand. The plugin announces
+  each new high hand in chat; the venue pays the prize.
+- **Bad beat jackpot:** each hand that sees a flop puts a cut into the jackpot (a percentage of the pot, with an
+  optional cap, either on top of the rake or out of it). When a big enough hand (the owner picks: Aces full, any
+  quads, Eights or better, Jacks or better, a straight flush), using both hole cards, loses the main pot at showdown
+  with enough players dealt in, the plugin announces it and **pays the jackpot into the players' stacks**: by default
+  50% to the loser, 25% to the winner and 25% shared by the rest of the table. 10% stays to start the next jackpot.
+  The owner can also set the jackpot to an amount (Ctrl+click *Set jackpot*), e.g. to start it.
+
+Dealers see the jackpot and the current high hand on the Table tab, and players see them on the table page and the
+venue page. The jackpot and the high hand are kept on the server, so every table of the venue shares them.
+
 ## Live web table (optional)
 
 Players can watch a dealer's table in a browser: seats, stacks, bets, pot and board, updating live. The table

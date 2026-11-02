@@ -62,6 +62,18 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool NoFlopNoDrop { get; set; } = true;
 
+    /// <summary>Deal the rest of the board twice when everyone left is all-in.</summary>
+    public bool RunItTwice { get; set; }
+
+    /// <summary>Show the bomb pot option next to Deal.</summary>
+    public bool BombPotEnabled { get; set; }
+
+    /// <summary>What everyone puts in for a bomb pot; 0 = two big blinds.</summary>
+    public long BombPotAmount { get; set; }
+
+    /// <summary>The next hand dealt is a bomb pot (then it goes back to normal).</summary>
+    public bool BombPotNext { get; set; }
+
     public long HouseEarnings { get; set; }
 
     /// <summary>
