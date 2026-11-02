@@ -70,9 +70,6 @@ public sealed class TableView
         DrawCenter(draw, center);
 
         var seats = Table.Seats;
-        if (seats.Count == 0)
-            CenteredText(draw, center + new Vector2(0, 40), MutedU, "Add players in the Players tab to seat them here");
-
         // The dealer takes the south slot; players fill the other slots clockwise from the dealer's left.
         var slots = seats.Count + 1;
         DrawDealer(draw, SeatPoint(center, rail, 0, slots));
@@ -127,6 +124,15 @@ public sealed class TableView
 
     private void DrawCenter(ImDrawListPtr draw, Vector2 center)
     {
+        // Nobody seated: an empty table, without a board left over from the last hand.
+        if (Table.Seats.Count == 0 && !Table.HandInProgress)
+        {
+            CenteredText(draw, center - new Vector2(0, 30), MutedU, "Texas Hold'em");
+            CenteredText(draw, center - new Vector2(0, 6), MutedU, "Add players in the Players tab to seat them here");
+            CenteredText(draw, center + new Vector2(0, 18), MutedU, $"Blinds {Table.SmallBlind:N0}/{Table.BigBlind:N0}");
+            return;
+        }
+
         var board = Table.Board;
         if (Table.HandInProgress || board.Count > 0)
         {
