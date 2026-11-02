@@ -373,7 +373,8 @@ public sealed class WebPublisher : IDisposable
                 })),
             });
 
-        return JsonSerializer.Serialize(new { state, privates });
+        var showAs = Config.WebShowAs.Length > 0 ? Config.WebShowAs : null;
+        return JsonSerializer.Serialize(new { state, privates, showAs });
     }
 
     /// <summary>What the player to act may do, for the buttons on their private page. Public: it's on the table anyway.</summary>

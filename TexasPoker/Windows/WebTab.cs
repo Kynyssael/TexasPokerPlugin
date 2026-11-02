@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using TexasPoker.Engine;
 
@@ -43,6 +44,7 @@ public sealed class WebTab
         if (ImGui.SmallButton("Send now"))
             Web.Push();
 
+        DrawShowAs();
         ImGui.Separator();
         DrawTableLink();
         ImGui.Spacing();
@@ -79,6 +81,45 @@ public sealed class WebTab
                 ImGui.CloseCurrentPopup();
             ImGui.EndPopup();
         }
+    }
+
+    /// <summary>
+    /// For dealers with more than one licence (their own and a venue's, or several venues): which one the
+    /// table is shown under on the website. The server only honours a licence they really hold.
+    /// </summary>
+    private void DrawShowAs()
+    {
+        var auth = plugin.Auth;
+        var options = new List<(string Value, string Label)>();
+        if (auth.HasIndividualLicence)
+            options.Add(("own", "My own table (no venue)"));
+        foreach (var venue in auth.Venues)
+            options.Add((venue.Id, venue.Name));
+        if (options.Count < 2)
+            return;
+
+        // Empty means the server's default: the venue you own, else the first that added you.
+        var current = options.FindIndex(o => o.Value == Config.WebShowAs);
+        if (current < 0)
+            current = options.FindIndex(o => o.Value != "own");
+
+        ImGui.SetNextItemWidth(260);
+        if (ImGui.BeginCombo("Show my table as", options[current].Label))
+        {
+            for (var i = 0; i < options.Count; i++)
+            {
+                if (ImGui.Selectable(options[i].Label, i == current) && i != current)
+                {
+                    Config.WebShowAs = options[i].Value;
+                    plugin.Save();
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A venue shows its name and logo on your table page. Your own table shows only Eorzean Poker.");
     }
 
     private void DrawTableLink()

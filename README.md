@@ -50,6 +50,9 @@ Tables of a venue's dealers show the venue's name and logo on the website. *Uplo
 JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can withdraw it.
 Dealers who aren't the owner see which venue they deal for.
 
+A dealer with more than one licence (their own and a venue's, or several venues) picks **Show my table as** on the
+Web tab: *My own table* (no venue branding) or one of their venues.
+
 The server side (XIVAuth app, `texaspoker allow`, `texaspoker venue ...`) is described in
 [TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#licences).
 

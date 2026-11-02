@@ -102,6 +102,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Web actions apply at once; off = they're only picked, for the dealer to confirm.</summary>
     public bool WebActionsAuto { get; set; } = true;
 
+    /// <summary>
+    /// Which licence the web table is shown under: "own" (individual licence, no venue branding), a venue
+    /// id, or empty for the server's default (the venue you own, else the first that added you).
+    /// </summary>
+    public string WebShowAs { get; set; } = string.Empty;
+
     /// <summary>Each player's private link token, by "name@world" in lower case.</summary>
     public Dictionary<string, string> WebTokens { get; set; } = new();
 
