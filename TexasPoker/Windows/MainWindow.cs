@@ -34,6 +34,7 @@ public sealed class MainWindow : Window
     private readonly TableView tableView;
     private readonly PlayersTab playersTab;
     private readonly WebTab webTab;
+    private readonly VenueTab venueTab;
     private readonly SignInPanel signInPanel;
 
     public MainWindow(Plugin plugin, DealerControls controls)
@@ -45,6 +46,7 @@ public sealed class MainWindow : Window
         tableView = new TableView(plugin);
         playersTab = new PlayersTab(plugin, controls);
         webTab = new WebTab(plugin);
+        venueTab = new VenueTab(plugin);
         signInPanel = new SignInPanel(plugin);
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(680, 520) };
         Size = new Vector2(900, 760);
@@ -90,6 +92,12 @@ public sealed class MainWindow : Window
         if (ImGui.BeginTabItem("Web"))
         {
             webTab.Draw();
+            ImGui.EndTabItem();
+        }
+
+        if (plugin.Auth.Venues.Count > 0 && ImGui.BeginTabItem("Venue"))
+        {
+            venueTab.Draw();
             ImGui.EndTabItem();
         }
 

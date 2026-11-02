@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -55,6 +56,12 @@ public sealed class AuthClient : IDisposable
     public string Message { get; private set; } = string.Empty;
 
     public bool Checking => busy && Step == SignInStep.Idle;
+
+    /// <summary>The venues the signed-in character owns or deals for, as of the last check.</summary>
+    public IReadOnlyList<VenueMembership> Venues { get; private set; } = [];
+
+    /// <summary>The signed-in character has an individual licence (not only a venue seat).</summary>
+    public bool HasIndividualLicence { get; private set; }
 
     private Configuration Config => plugin.Configuration;
 
@@ -218,7 +225,7 @@ public sealed class AuthClient : IDisposable
                         Config.AuthLodestoneId = lodestone;
                         Config.AuthConfirmedUtc = DateTime.UtcNow;
                         CancelSignIn();
-                        nextCheck = DateTime.UtcNow + CheckEvery;
+                        nextCheck = DateTime.MinValue; // fetch the licence details right away
                         plugin.Save();
                         plugin.Chat.PrintLocal($"Signed in as {name}@{world}.");
                     });
@@ -230,7 +237,7 @@ public sealed class AuthClient : IDisposable
                     : "your character";
                 var reason = status switch
                 {
-                    "notapproved" => $"{who} isn't approved to deal yet. Ask the venue owner to approve it, then sign in again.",
+                    "notapproved" => $"{who} isn't approved to deal yet. Ask Elenor, or your venue's owner to add it, then sign in again.",
                     "denied" => "The sign-in was cancelled on XIVAuth.",
                     "expired" => "The code expired before it was entered. Try again.",
                     "blocked" => "This character isn't allowed to use the plugin.",
@@ -266,8 +273,23 @@ public sealed class AuthClient : IDisposable
 
                 response.EnsureSuccessStatusCode();
                 using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-                var name = json.RootElement.GetProperty("name").GetString() ?? Config.AuthName;
-                var world = json.RootElement.GetProperty("world").GetString() ?? Config.AuthWorld;
+                var root = json.RootElement;
+                var name = root.GetProperty("name").GetString() ?? Config.AuthName;
+                var world = root.GetProperty("world").GetString() ?? Config.AuthWorld;
+                var individual = root.TryGetProperty("individual", out var ind) && ind.ValueKind == JsonValueKind.True;
+                var venues = new List<VenueMembership>();
+                if (root.TryGetProperty("venues", out var list) && list.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var v in list.EnumerateArray())
+                    {
+                        venues.Add(new VenueMembership(
+                            v.GetProperty("id").GetString() ?? string.Empty,
+                            v.GetProperty("name").GetString() ?? string.Empty,
+                            v.TryGetProperty("isOwner", out var owner) && owner.ValueKind == JsonValueKind.True,
+                            v.TryGetProperty("ownerName", out var ownerName) ? ownerName.GetString() ?? string.Empty : string.Empty));
+                    }
+                }
+
                 Finish(() =>
                 {
                     if (Config.AuthSessionKey != key)
@@ -275,6 +297,8 @@ public sealed class AuthClient : IDisposable
                     var changed = name != Config.AuthName || world != Config.AuthWorld;
                     Config.AuthName = name;
                     Config.AuthWorld = world;
+                    Venues = venues;
+                    HasIndividualLicence = individual;
                     Config.AuthConfirmedUtc = DateTime.UtcNow;
                     Message = string.Empty;
                     nextCheck = DateTime.UtcNow + CheckEvery;
@@ -298,6 +322,8 @@ public sealed class AuthClient : IDisposable
     {
         Config.AuthSessionKey = string.Empty;
         Config.AuthConfirmedUtc = null;
+        Venues = [];
+        HasIndividualLicence = false;
         Message = message;
         plugin.Save();
     }
@@ -315,3 +341,6 @@ public sealed class AuthClient : IDisposable
         action();
     });
 }
+
+/// <summary>A venue licence the signed-in character holds a seat in.</summary>
+public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName);

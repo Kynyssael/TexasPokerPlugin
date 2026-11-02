@@ -34,13 +34,24 @@ The plugin is for approved dealers only. Until you sign in, `/poker` shows a sig
 2. Your browser opens XIVAuth. Sign in there, choose that character and enter the code the plugin shows.
 3. The plugin unlocks. A sign-in lasts 30 days.
 
-Only characters Elenor has approved on the server can sign in. A character that isn't approved yet gets
-"isn't approved to deal yet" and can sign in again once approved. The plugin works only while you're on the
-character you signed in with. If the server can't be reached, your last sign-in keeps working for a day. If your
-sign-in ends mid-hand, you can still finish that hand.
+Only characters with a licence can sign in:
 
-The server side (XIVAuth app, `texaspoker allow` / `disallow` / `block`) is described in
-[TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#managing-dealers).
+- **Individual licence:** Elenor approves the character on the server.
+- **Venue licence:** the venue's owner adds the character as one of its dealers.
+
+A character without one gets "isn't approved to deal yet" and can sign in again once licensed. The plugin works
+only while you're on the character you signed in with. If the server can't be reached, your last sign-in keeps
+working for a day. If your sign-in ends mid-hand, you can still finish that hand.
+
+**Venue owners** get a **Venue** tab. It shows how many of the venue's dealer seats are used and lists its dealers.
+Type a dealer as `First Last@World` (or use *Add my target*) to add them; they can sign in right away, even if they
+never have before. Ctrl+click *Remove* to take a dealer off, which signs them out unless they have another licence.
+Tables of a venue's dealers show the venue's name and logo on the website. *Upload logo...* picks an image (PNG,
+JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can withdraw it.
+Dealers who aren't the owner see which venue they deal for.
+
+The server side (XIVAuth app, `texaspoker allow`, `texaspoker venue ...`) is described in
+[TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#licences).
 
 ## Layout
 
