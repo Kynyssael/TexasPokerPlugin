@@ -119,6 +119,46 @@ public sealed class WebPublisher : IDisposable
         _ = Task.Run(SendLoop);
     }
 
+    /// <summary>
+    /// Takes the table off the website now (the web table was turned off): its pages go back to "waiting"
+    /// and it leaves the venue's page. Waits for a send in flight, so that can't put it back. Call on the
+    /// framework thread.
+    /// </summary>
+    public void Close()
+    {
+        if (Config.WebTableId.Length == 0 || !plugin.Auth.SignedIn)
+            return;
+
+        lock (gate)
+            latest = null;
+        var url = $"{BaseUrl}/api/t/{Config.WebTableId}";
+        var session = Config.AuthSessionKey;
+        _ = Task.Run(async () =>
+        {
+            for (var i = 0; i < 100 && IsSending(); i++)
+                await Task.Delay(100).ConfigureAwait(false);
+            if (Config.WebEnabled)
+                return; // turned back on meanwhile
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                Status = response.IsSuccessStatusCode ? "Taken off the website" : $"Couldn't take it off the website ({(int)response.StatusCode})";
+            }
+            catch (Exception ex)
+            {
+                Status = $"Can't reach the server: {ex.Message}";
+            }
+        });
+    }
+
+    private bool IsSending()
+    {
+        lock (gate)
+            return sending;
+    }
+
     public void Dispose() => framework.Update -= OnUpdate;
 
     // Re-send now and then, so a restarted server gets the table back without waiting for an action.

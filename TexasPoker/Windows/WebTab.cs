@@ -34,6 +34,10 @@ public sealed class WebTab
         {
             Config.WebEnabled = enabled;
             plugin.Save();
+            if (enabled)
+                Web.Push();
+            else
+                Web.Close();
         }
 
         if (!Config.WebEnabled)

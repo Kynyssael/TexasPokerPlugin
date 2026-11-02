@@ -133,6 +133,7 @@ Its README covers setting it up in a Proxmox container, HTTPS with Cloudflare Tu
 
 1. **Web** tab: tick *Show my table on the web*. The status line turns green once the server accepts the table.
    *Table name* sets the name shown on the table page and on your venue's page (empty = "Texas Hold'em").
+   Unticking the box takes the table off the website at once (its link shows "waiting" until you tick it again).
 2. *Post in /p* shares the table link. *Tell every player their private link* sends each player their own link by `/tell`.
 3. Links can't be clicked in game chat, so they're short enough to type. Players can also copy them with a chat plugin, or you can post them on Discord.
 4. If one player's private link leaks, Ctrl+click *New link* on their row. The table link never changes.
