@@ -44,6 +44,7 @@ public sealed class WebTab
         if (ImGui.SmallButton("Send now"))
             Web.Push();
 
+        DrawTableName();
         DrawShowAs();
         ImGui.Separator();
         DrawTableLink();
@@ -81,6 +82,23 @@ public sealed class WebTab
                 ImGui.CloseCurrentPopup();
             ImGui.EndPopup();
         }
+    }
+
+    /// <summary>The table's name on its web page and its venue's page. Sent once the dealer finishes typing.</summary>
+    private void DrawTableName()
+    {
+        var title = Config.WebTableTitle;
+        ImGui.SetNextItemWidth(260);
+        if (ImGui.InputTextWithHint("Table name", "Texas Hold'em", ref title, 40))
+            Config.WebTableTitle = title;
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            plugin.Save();
+            Web.Push();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Shown at the top of your table page, and on your venue's page. Leave it empty for \"Texas Hold'em\".");
     }
 
     /// <summary>
