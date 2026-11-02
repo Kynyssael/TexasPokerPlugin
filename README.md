@@ -11,20 +11,26 @@ A no-limit Texas Hold'em **dealer tool** for FFXIV venues. Only the dealer runs 
 - reads players' actions ("call", "raise to 20k") from chat and picks them for the dealer to confirm
 - optional live web table that players can watch in a browser
 
-## Install (dev plugin)
+## Install
 
-The plugin isn't on any plugin repository. Dealers run it as a Dalamud dev plugin.
+Dealers install it from this repository's own plugin list, and Dalamud keeps it up to date by itself.
 
-1. Build the package: `dotnet build TexasPoker -c Release` makes `TexasPoker\bin\Release\TexasPoker\latest.zip`.
-   Send that zip to the dealer.
-2. The dealer unzips it into a folder they keep, e.g. `C:\FFXIV Plugins\TexasPoker`.
-3. In game: `/xlsettings` → **Experimental** → under *Dev Plugin Locations* add the full path to `TexasPoker.dll`
-   in that folder, click **+**, then **Save**.
-4. `/xlplugins` → **Dev Tools** → enable *Texas Hold'em Dealer*.
-5. `/poker` opens the plugin; sign in as below.
+1. In game: `/xlsettings` → **Experimental** → under *Custom Plugin Repositories* paste
+   `https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo/pluginmaster.json`, tick **Enabled**,
+   click **+**, then **Save**.
+2. `/xlplugins` → **All Plugins** → search *Texas Hold'em Dealer* → **Install**.
+3. `/poker` opens the plugin; sign in as below.
 
-To update, send a new zip. The dealer replaces the files in the same folder and reloads the plugin in **Dev Tools**.
-Their settings, players and table link are kept.
+Updates arrive like any other plugin's (`/xlplugins` → **Update**). Settings, players and the table link are kept.
+
+**Moving from the dev plugin (the zip):** first remove the old one: `/xlsettings` → **Experimental** → delete its
+entry under *Dev Plugin Locations* → **Save**, and restart the game. Then install as above. Settings carry over.
+
+### Releasing a new version
+
+1. Raise `<Version>` in `TexasPoker/TexasPoker.csproj`, then `dotnet build TexasPoker.slnx -c Release`.
+2. `powershell -File publish-repo.ps1` copies the build to `repo/latest.zip` and updates `repo/pluginmaster.json`.
+3. Commit and push `repo/`. Dealers' Dalamud offers the update within a few hours (or at once with *Check for updates*).
 
 ## Signing in
 

@@ -1,0 +1,29 @@
+[
+    {
+        "Author":  "Elenor",
+        "Name":  "Texas Hold\u0027em Dealer",
+        "InternalName":  "TexasPoker",
+        "AssemblyVersion":  "0.4.0.0",
+        "Punchline":  "Deal no-limit Texas Hold\u0027em for your venue.",
+        "Description":  "A dealer tool for running Texas Hold\u0027em tables. Shuffles and deals, sends hole cards by /tell, tracks blinds, bets, side pots, rake and each player\u0027s gil ledger, and announces the action to party chat with wording you can customise. Reads players\u0027 actions from chat for you to confirm, and can show your table live on the web. Only the dealer needs the plugin.",
+        "ApplicableVersion":  "any",
+        "Tags":  [
+                     "poker",
+                     "casino",
+                     "venue",
+                     "dealer",
+                     "cards"
+                 ],
+        "DalamudApiLevel":  15,
+        "LoadPriority":  0,
+        "RepoUrl":  "https://github.com/Kynyssael/TexasPokerPlugin",
+        "IconUrl":  "https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/TexasPoker/images/icon.png",
+        "DownloadLinkInstall":  "https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo/latest.zip",
+        "DownloadLinkUpdate":  "https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo/latest.zip",
+        "DownloadLinkTesting":  "https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo/latest.zip",
+        "AcceptsFeedback":  false,
+        "IsHide":  false,
+        "IsTestingExclusive":  false,
+        "LastUpdate":  1793661966
+    }
+]
