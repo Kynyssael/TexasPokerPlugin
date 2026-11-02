@@ -1,10 +1,13 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using TexasPoker.Engine;
@@ -40,6 +43,14 @@ public sealed class WebPublisher : IDisposable
     private static readonly TimeSpan ActionFetchEvery = TimeSpan.FromSeconds(1.5);
     private DateTime nextActionFetch = DateTime.MinValue;
     private bool fetchingActions;
+
+    // Web actions arrive over a WebSocket the moment a player sends them. While it's down (or the server is
+    // too old to have one) they're collected every 1.5 s instead, and it's tried again after a pause.
+    private CancellationTokenSource? actionSocket;
+    private string actionSocketTable = string.Empty;
+    private volatile bool actionSocketLive;
+    private DateTime nextActionSocketTry = DateTime.MinValue;
+    private int actionSocketFailures;
 
     // Set by the send loop, handled on the framework thread where the config is safe to change.
     private volatile bool claimedNow;
@@ -159,7 +170,11 @@ public sealed class WebPublisher : IDisposable
             return sending;
     }
 
-    public void Dispose() => framework.Update -= OnUpdate;
+    public void Dispose()
+    {
+        framework.Update -= OnUpdate;
+        StopActionSocket();
+    }
 
     // Re-send now and then, so a restarted server gets the table back without waiting for an action.
     private void OnUpdate(IFramework _)
@@ -182,8 +197,99 @@ public sealed class WebPublisher : IDisposable
         if (IsConfigured && DateTime.UtcNow >= nextHeartbeat)
             Push();
 
-        if (IsConfigured && Config.WebActions && Table.HandInProgress && !fetchingActions && DateTime.UtcNow >= nextActionFetch)
+        var wantSocket = IsConfigured && Config.WebActions;
+        if (actionSocket is not null && (!wantSocket || actionSocketTable != Config.WebTableId))
+            StopActionSocket();
+        if (wantSocket && actionSocket is null && DateTime.UtcNow >= nextActionSocketTry)
+            StartActionSocket();
+
+        if (IsConfigured && Config.WebActions && !actionSocketLive && Table.HandInProgress && !fetchingActions && DateTime.UtcNow >= nextActionFetch)
             FetchActions();
+    }
+
+    private void StartActionSocket()
+    {
+        var cts = new CancellationTokenSource();
+        actionSocket = cts;
+        actionSocketTable = Config.WebTableId;
+        var url = new Uri($"{BaseUrl.Replace("https://", "wss://").Replace("http://", "ws://")}/api/t/{Config.WebTableId}/actions/ws");
+        var session = Config.AuthSessionKey;
+        _ = Task.Run(() => RunActionSocket(cts, url, session));
+    }
+
+    private void StopActionSocket()
+    {
+        actionSocket?.Cancel();
+        actionSocket = null;
+        actionSocketLive = false;
+    }
+
+    private async Task RunActionSocket(CancellationTokenSource cts, Uri url, string session)
+    {
+        var connected = false;
+        try
+        {
+            using var socket = new ClientWebSocket();
+            socket.Options.SetRequestHeader("Authorization", $"Bearer {session}");
+            socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+            using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token))
+            {
+                connectTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                await socket.ConnectAsync(url, connectTimeout.Token).ConfigureAwait(false);
+            }
+
+            connected = true;
+            actionSocketLive = true;
+            var buffer = new byte[8192];
+            while (!cts.Token.IsCancellationRequested)
+            {
+                using var message = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await socket.ReceiveAsync(buffer, cts.Token).ConfigureAwait(false);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        return;
+                    message.Write(buffer, 0, result.Count);
+                }
+                while (!result.EndOfMessage);
+
+                WebAction[] received;
+                try
+                {
+                    received = JsonSerializer.Deserialize<WebAction[]>(message.ToArray()) ?? [];
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                await framework.RunOnFrameworkThread(() =>
+                {
+                    foreach (var action in received)
+                        HandleAction(action);
+                }).ConfigureAwait(false);
+            }
+        }
+        catch (Exception)
+        {
+            // Closed, cancelled, or the server doesn't have the socket: polling covers it until the next try.
+        }
+        finally
+        {
+            await framework.RunOnFrameworkThread(() =>
+            {
+                if (actionSocket != cts)
+                    return; // stopped on purpose, or replaced
+                actionSocket = null;
+                actionSocketLive = false;
+                // Reconnect soon after a drop; back off (up to a minute) when it can't connect at all.
+                actionSocketFailures = connected ? 0 : Math.Min(actionSocketFailures + 1, 6);
+                var delay = connected ? 2 : Math.Min(60, 5 * Math.Pow(2, actionSocketFailures - 1));
+                nextActionSocketTry = DateTime.UtcNow + TimeSpan.FromSeconds(delay);
+            }).ConfigureAwait(false);
+            cts.Dispose();
+        }
     }
 
     /// <summary>Collects actions players sent from their private pages, then checks and applies them here.</summary>

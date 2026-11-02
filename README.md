@@ -117,7 +117,8 @@ their cards stay face-down unless they press and hold.
 action is signed with the player's link, so neither the server nor anyone else can send one for them. The plugin
 only applies it if it's for the current hand and that exact turn. By default it applies at once (Web tab: *Apply web
 actions automatically*); turned off, it's picked for you to confirm, like an action typed in chat. Players can still
-type in chat as before.
+type in chat as before. Actions reach the plugin the moment they're sent, over a connection it keeps open to the
+server; if that connection is down, it checks for them every 1.5 s until it's back.
 
 ### 1. Point the plugin at your server
 
