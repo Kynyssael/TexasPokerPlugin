@@ -23,7 +23,7 @@ public sealed class SignInPanel
         ImGui.SetWindowFontScale(1.4f);
         ImGui.TextColored(DealerControls.Gold, "Sign in to deal");
         ImGui.SetWindowFontScale(1f);
-        ImGui.TextWrapped("Texas Hold'em Dealer is for approved dealers. Sign in with XIVAuth, choosing the character " +
+        ImGui.TextWrapped("Eorzean Poker is for approved dealers. Sign in with XIVAuth, choosing the character " +
                           "you deal on. Only characters Elenor has authorized can sign in.");
         ImGui.Spacing();
 

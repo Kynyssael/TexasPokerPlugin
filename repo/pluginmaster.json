@@ -1,11 +1,11 @@
 [
     {
         "Author":  "Elenor",
-        "Name":  "Texas Hold\u0027em Dealer",
+        "Name":  "Eorzean Poker",
         "InternalName":  "TexasPoker",
-        "AssemblyVersion":  "0.4.0.3",
-        "Punchline":  "Deal no-limit Texas Hold\u0027em for your venue.",
-        "Description":  "A dealer tool for running Texas Hold\u0027em tables. Shuffles and deals, sends hole cards by /tell, tracks blinds, bets, side pots, rake and each player\u0027s gil ledger, and announces the action to party chat with wording you can customise. Reads players\u0027 actions from chat for you to confirm, and can show your table live on the web. Only the dealer needs the plugin.",
+        "AssemblyVersion":  "0.4.0.4",
+        "Punchline":  "Deal no-limit Texas Hold\u0027em at your venue.",
+        "Description":  "Runs a no-limit Texas Hold\u0027em table for the dealer: deals, sends hole cards by /tell, and tracks blinds, bets, side pots, rake and each player\u0027s gil. Your table can go live on eorzeanpoker.app, where players see their own cards and act. Only the dealer needs the plugin.",
         "ApplicableVersion":  "any",
         "Tags":  [
                      "poker",
@@ -24,6 +24,6 @@
         "AcceptsFeedback":  false,
         "IsHide":  false,
         "IsTestingExclusive":  false,
-        "LastUpdate":  1793730671
+        "LastUpdate":  1793732069
     }
 ]

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -38,7 +38,7 @@ public sealed class MainWindow : Window
     private readonly SignInPanel signInPanel;
 
     public MainWindow(Plugin plugin, DealerControls controls)
-        : base("Texas Hold'em Dealer###TexasPokerMain")
+        : base("Eorzean Poker###TexasPokerMain")
     {
         this.plugin = plugin;
         this.controls = controls;

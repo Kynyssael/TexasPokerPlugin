@@ -1,4 +1,4 @@
-# Texas Hold'em Dealer (Dalamud plugin)
+# Eorzean Poker (Dalamud plugin)
 
 A no-limit Texas Hold'em **dealer tool** for FFXIV venues. Only the dealer runs the plugin:
 
@@ -18,7 +18,7 @@ Dealers install it from this repository's own plugin list, and Dalamud keeps it 
 1. In game: `/xlsettings` → **Experimental** → under *Custom Plugin Repositories* paste
    `https://raw.githubusercontent.com/Kynyssael/TexasPokerPlugin/main/repo/pluginmaster.json`, tick **Enabled**,
    click **+**, then **Save**.
-2. `/xlplugins` → **All Plugins** → search *Texas Hold'em Dealer* → **Install**.
+2. `/xlplugins` → **All Plugins** → search *Eorzean Poker* → **Install**.
 3. `/poker` opens the plugin; sign in as below.
 
 Updates arrive like any other plugin's (`/xlplugins` → **Update**). Settings, players and the table link are kept.
@@ -92,7 +92,7 @@ dotnet test
 ## Run your own build in game
 
 1. In game, `/xlsettings` → **Experimental** → add the full path to `TexasPoker\bin\Debug\TexasPoker.dll` under *Dev Plugin Locations*, and save.
-2. `/xlplugins` → **Dev Tools** → enable *Texas Hold'em Dealer*.
+2. `/xlplugins` → **Dev Tools** → enable *Eorzean Poker*.
 3. `/poker` opens the table. `/poker deal` deals a hand; `/poker state` announces the table state.
 
 Turn off **Send to chat** at the top of the window to try it out: every message is then printed only in your own chat log.
