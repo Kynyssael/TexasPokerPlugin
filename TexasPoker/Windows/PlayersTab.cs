@@ -49,6 +49,11 @@ public sealed class PlayersTab
     private void DrawAddPlayers()
     {
         ImGui.TextColored(DealerControls.Gold, "Seat a player");
+        ImGui.SameLine();
+        var full = Table.Seats.Count >= Table.MaxSeats;
+        ImGui.TextColored(full ? DealerControls.Red : DealerControls.Muted,
+                          full ? $"The table is full ({Table.MaxSeats} players)." : $"{Table.Seats.Count} of {Table.MaxSeats} seats taken");
+        ImGui.BeginDisabled(full);
 
         ImGui.SetNextItemWidth(180);
         var entered = ImGui.InputTextWithHint("##name", "First Last", ref newName, 32, ImGuiInputTextFlags.EnterReturnsTrue);
@@ -85,6 +90,7 @@ public sealed class PlayersTab
 
         ImGui.SameLine();
         ImGui.TextColored(DealerControls.Muted, $"Each with a {newBuyIn:N0} buy-in");
+        ImGui.EndDisabled();
 
         if (notice.Length > 0)
         {
@@ -130,16 +136,22 @@ public sealed class PlayersTab
         var buyIn = newBuyIn;
         controls.Do(() =>
         {
-            var added = plugin.GetPartyMembers()
+            var waiting = plugin.GetPartyMembers()
                 .Where(m => !Table.Seats.Any(s => s.Name.Equals(m.Name, StringComparison.OrdinalIgnoreCase) &&
                                                   s.World.Equals(m.World, StringComparison.OrdinalIgnoreCase)))
-                .Select(m => Table.AddSeat(m.Name, m.World, buyIn))
                 .ToList();
-
-            if (added.Count == 0)
+            if (waiting.Count == 0)
                 throw new InvalidOperationException("Everyone in the party (except you, the dealer) is already seated.");
 
-            Notify($"Seated {string.Join(", ", added.Select(s => s.Name))}. Collect {buyIn:N0} gil from each.",
+            // Only as many as there are free seats; the rest are named, so the dealer can tell them.
+            var free = Math.Max(0, Table.MaxSeats - Table.Seats.Count);
+            if (free == 0)
+                throw new InvalidOperationException($"The table is full ({Table.MaxSeats} players). Cash someone out first.");
+            var added = waiting.Take(free).Select(m => Table.AddSeat(m.Name, m.World, buyIn)).ToList();
+            var left = waiting.Skip(free).Select(m => m.Name).ToList();
+
+            Notify($"Seated {string.Join(", ", added.Select(s => s.Name))}. Collect {buyIn:N0} gil from each." +
+                   (left.Count > 0 ? $" No seat left for {string.Join(", ", left)}." : string.Empty),
                    () => added.ForEach(Table.RemoveSeat));
         });
     }

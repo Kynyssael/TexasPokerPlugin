@@ -1,4 +1,4 @@
-﻿namespace TexasPoker.Engine;
+namespace TexasPoker.Engine;
 
 public enum Street
 {
@@ -177,7 +177,12 @@ public sealed class Table
 
     public bool CanUndo => HandInProgress && undo.Count > 0;
 
-    public Seat AddSeat(string name, string world, long buyIn)
+    /// <summary>The most players a table seats. A saved table with more (from before the cap) keeps them.</summary>
+    public const int MaxSeats = 7;
+
+    public Seat AddSeat(string name, string world, long buyIn) => AddSeat(name, world, buyIn, capped: true);
+
+    private Seat AddSeat(string name, string world, long buyIn, bool capped)
     {
         name = name.Trim();
         world = world.Trim();
@@ -188,6 +193,8 @@ public sealed class Table
         if (seats.Any(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
                            s.World.Equals(world, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"{name} is already seated.");
+        if (capped && seats.Count >= MaxSeats)
+            throw new InvalidOperationException($"The table is full ({MaxSeats} players). Cash someone out first.");
 
         // New seats are appended, so indices held by an in-progress hand stay valid.
         var seat = new Seat(name, world, buyIn);
@@ -198,7 +205,7 @@ public sealed class Table
     /// <summary>Restores a seat from saved data without counting a new buy-in.</summary>
     public Seat RestoreSeat(string name, string world, long stack, long totalBuyIn, bool sittingOut)
     {
-        var seat = AddSeat(name, world, stack);
+        var seat = AddSeat(name, world, stack, capped: false);
         seat.TotalBuyIn = totalBuyIn;
         seat.SittingOut = sittingOut;
         return seat;

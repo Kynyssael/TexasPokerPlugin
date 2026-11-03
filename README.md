@@ -100,6 +100,7 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 ## Dealing a session
 
 1. **Players** tab: set the buy-in, then type a name and press Enter, or use *Seat my target* / *Seat whole party*. Take their gil by trade.
+   A table seats up to 7 players.
 2. **Settings** tab, in sections you open as needed: blinds and buy-in, rake, bomb pots and run it twice, chat and
    announcements, players' actions, and this window.
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.

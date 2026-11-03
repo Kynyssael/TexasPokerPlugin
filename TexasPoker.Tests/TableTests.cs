@@ -37,6 +37,22 @@ public class TableTests
     }
 
     [Fact]
+    public void Table_seats_at_most_seven_players()
+    {
+        var table = NewTable(null, 1000, 1000, 1000, 1000, 1000, 1000, 1000);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => table.AddSeat("P7", "World", 1000));
+        Assert.Contains("full", ex.Message);
+        Assert.Equal(Table.MaxSeats, table.Seats.Count);
+
+        // A seat freed by a cash-out can be taken again, and a saved table is restored whole.
+        table.RemoveSeat(table.Seats[0]);
+        table.AddSeat("P7", "World", 1000);
+        table.RestoreSeat("P8", "World", 1000, 1000, false);
+        Assert.Equal(8, table.Seats.Count);
+    }
+
+    [Fact]
     public void Heads_up_button_posts_small_blind_and_acts_first()
     {
         var table = NewTable(null, 1000, 1000);
