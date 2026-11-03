@@ -49,7 +49,8 @@ A character without one gets "isn't approved to deal yet" and can sign in again 
 only while you're on the character you signed in with. If the server can't be reached, your last sign-in keeps
 working for a day. If your sign-in ends mid-hand, you can still finish that hand.
 
-**Venue owners** get a **Venue** tab. It shows how many of the venue's dealer seats are used and lists its dealers.
+**Venue owners** get a **Venue** tab, with a section per venue (open the one you want; with one venue it starts
+open). It shows how many of the venue's dealer seats are used and lists its dealers.
 Type a dealer as `First Last@World` (or use *Add my target*) to add them; they can sign in right away, even if they
 never have before. Ctrl+click *Remove* to take a dealer off, which signs them out unless they have another licence.
 Tables of a venue's dealers show the venue's name, logo and colours on the website. *Upload logo...* picks an image
@@ -99,9 +100,11 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 ## Dealing a session
 
 1. **Players** tab: set the buy-in, then type a name and press Enter, or use *Seat my target* / *Seat whole party*. Take their gil by trade.
-2. **Settings** tab: blinds, announce channel, message delay.
+2. **Settings** tab, in sections you open as needed: blinds and buy-in, rake, bomb pots and run it twice, chat and
+   announcements, players' actions, and this window.
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
+5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again.
 
 ### Bomb pots and running it twice
 

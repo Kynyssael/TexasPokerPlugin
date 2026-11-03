@@ -50,15 +50,23 @@ public sealed class VenueTab
     {
         fileDialog.Draw();
         var auth = plugin.Auth;
+        // Each venue is its own section, so a dealer in several venues isn't scrolling past all of them.
+        // With only one, it starts open.
+        var onlyOne = auth.Venues.Count == 1;
         foreach (var venue in auth.Venues)
         {
             if (venue.IsOwner)
                 continue;
-            ImGui.TextColored(DealerControls.Gold, venue.Name);
+            if (!VenueHeader($"{venue.Name}   (you deal here)###deal{venue.Id}", onlyOne))
+                continue;
+            ImGui.Indent();
+            ImGui.PushID(venue.Id); // each venue's Open and Copy buttons are its own
             ImGui.TextWrapped($"You deal for {venue.Name}. Its owner, {venue.OwnerName}, manages its dealers. " +
                               "Your table on the website shows the venue's name, logo and colours, and is listed on its page.");
             DrawPageLink(venue.Page);
-            ImGui.Separator();
+            ImGui.PopID();
+            ImGui.Unindent();
+            ImGui.Spacing();
         }
 
         if (!auth.Venues.Any(v => v.IsOwner))
@@ -85,17 +93,28 @@ public sealed class VenueTab
             ImGui.TextColored(messageIsError ? DealerControls.Red : DealerControls.Good, message);
 
         foreach (var venue in owned)
+        {
+            // "###" keeps the section open or closed while the seat count in its title changes.
+            if (!VenueHeader($"{venue.Name}   (you own it, {venue.Used} of {venue.Seats} dealer seats used)###own{venue.Id}", onlyOne))
+                continue;
+            ImGui.Indent();
             DrawOwned(venue);
+            ImGui.Unindent();
+            ImGui.Spacing();
+        }
+    }
+
+    private static bool VenueHeader(string label, bool open)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, DealerControls.Gold);
+        var shown = ImGui.CollapsingHeader(label, open ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None);
+        ImGui.PopStyleColor();
+        return shown;
     }
 
     private void DrawOwned(OwnedVenue venue)
     {
         ImGui.PushID(venue.Id);
-        ImGui.Separator();
-        ImGui.TextColored(DealerControls.Gold, venue.Name);
-        ImGui.SameLine();
-        ImGui.TextColored(venue.Used >= venue.Seats ? DealerControls.Red : DealerControls.Muted,
-                          $"{venue.Used} of {venue.Seats} dealer seats used");
 
         if (ImGui.BeginTable("##dealers", 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
         {

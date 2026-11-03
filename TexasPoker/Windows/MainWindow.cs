@@ -262,152 +262,185 @@ public sealed class MainWindow : Window
     private void DrawSettingsTab()
     {
         var changed = false;
+        var inHand = Table.HandInProgress;
 
-        ImGui.BeginDisabled(Table.HandInProgress);
-        var sb = Table.SmallBlind;
-        var bb = Table.BigBlind;
-        ImGui.SetNextItemWidth(140);
-        if (DealerControls.InputLong("Small blind", ref sb))
+        // One section per topic, so finding a setting doesn't mean scrolling past all of them.
+        if (SettingsHeader("Blinds and buy-in", open: true))
         {
-            Table.SmallBlind = Math.Max(0, sb);
-            changed = true;
-        }
-
-        ImGui.SetNextItemWidth(140);
-        if (DealerControls.InputLong("Big blind", ref bb))
-        {
-            Table.BigBlind = Math.Max(1, bb);
-            changed = true;
-        }
-
-        ImGui.Separator();
-        var rakePercent = (float)Table.RakePercent;
-        ImGui.SetNextItemWidth(140);
-        if (ImGui.InputFloat("Rake % (0 = off)", ref rakePercent, 0.5f, 1f, "%.2f"))
-        {
-            Table.RakePercent = Math.Round((decimal)Math.Clamp(rakePercent, 0f, 100f), 2);
-            changed = true;
-        }
-
-        ImGui.BeginDisabled(Table.RakePercent <= 0);
-        var rakeCap = Table.RakeCap;
-        ImGui.SetNextItemWidth(140);
-        if (DealerControls.InputLong("Rake cap per hand (0 = no cap)", ref rakeCap))
-        {
-            Table.RakeCap = rakeCap;
-            changed = true;
-        }
-
-        changed |= Checkbox("No flop, no drop", () => Table.NoFlopNoDrop, v => Table.NoFlopNoDrop = v);
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Take no rake from hands that end before the flop.");
-        ImGui.EndDisabled();
-
-        ImGui.Separator();
-        changed |= Checkbox("Run it twice when everyone is all-in", () => Table.RunItTwice, v => Table.RunItTwice = v);
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("When nobody can bet any more and cards are still to come, the rest of the board is dealt twice\n" +
-                             "and each pot is split between the two boards. Hands run twice don't count for venue promotions.");
-
-        ImGui.EndDisabled();
-
-        changed |= Checkbox("Bomb pots", () => Config.BombPotEnabled, v => Config.BombPotEnabled = v);
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Adds a Bomb pot option next to Deal: everyone puts in the same amount, no blinds, and the hand starts on the flop.");
-        if (Config.BombPotEnabled)
-        {
-            ImGui.SameLine();
-            var bomb = Config.BombPotAmount;
+            ImGui.BeginDisabled(inHand);
+            var sb = Table.SmallBlind;
+            var bb = Table.BigBlind;
             ImGui.SetNextItemWidth(140);
-            if (DealerControls.InputLong("Bomb pot amount (0 = two big blinds)", ref bomb))
+            if (DealerControls.InputLong("Small blind", ref sb))
             {
-                Config.BombPotAmount = Math.Max(0, bomb);
+                Table.SmallBlind = Math.Max(0, sb);
+                changed = true;
+            }
+
+            ImGui.SetNextItemWidth(140);
+            if (DealerControls.InputLong("Big blind", ref bb))
+            {
+                Table.BigBlind = Math.Max(1, bb);
+                changed = true;
+            }
+
+            ImGui.EndDisabled();
+
+            var buyIn = Config.DefaultBuyIn;
+            ImGui.SetNextItemWidth(140);
+            if (DealerControls.InputLong("Default buy-in", ref buyIn))
+            {
+                Config.DefaultBuyIn = Math.Max(0, buyIn);
+                changed = true;
+            }
+
+            ImGui.TextUnformatted($"Hands dealt: {Table.HandNumber:N0} (next is #{Table.HandNumber + 1})");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(inHand || Table.HandNumber == 0 || !ImGui.GetIO().KeyCtrl);
+            if (ImGui.Button("Reset hand #"))
+            {
+                Table.HandNumber = 0;
+                changed = true;
+            }
+
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip(inHand
+                    ? "Finish or cancel the current hand first."
+                    : "Hold Ctrl and click. The next hand dealt will be Hand #1. Stacks are not touched.");
+            LockedDuringHand(inHand);
+        }
+
+        if (SettingsHeader("Rake"))
+        {
+            ImGui.BeginDisabled(inHand);
+            var rakePercent = (float)Table.RakePercent;
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.InputFloat("Rake % (0 = off)", ref rakePercent, 0.5f, 1f, "%.2f"))
+            {
+                Table.RakePercent = Math.Round((decimal)Math.Clamp(rakePercent, 0f, 100f), 2);
+                changed = true;
+            }
+
+            ImGui.BeginDisabled(Table.RakePercent <= 0);
+            var rakeCap = Table.RakeCap;
+            ImGui.SetNextItemWidth(140);
+            if (DealerControls.InputLong("Rake cap per hand (0 = no cap)", ref rakeCap))
+            {
+                Table.RakeCap = rakeCap;
+                changed = true;
+            }
+
+            changed |= Checkbox("No flop, no drop", () => Table.NoFlopNoDrop, v => Table.NoFlopNoDrop = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Take no rake from hands that end before the flop.");
+            ImGui.EndDisabled();
+            ImGui.EndDisabled();
+            LockedDuringHand(inHand);
+        }
+
+        if (SettingsHeader("Bomb pots and run it twice"))
+        {
+            ImGui.BeginDisabled(inHand);
+            changed |= Checkbox("Run it twice when everyone is all-in", () => Table.RunItTwice, v => Table.RunItTwice = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("When nobody can bet any more and cards are still to come, the rest of the board is dealt twice\n" +
+                                 "and each pot is split between the two boards. Hands run twice don't count for venue promotions.");
+            ImGui.EndDisabled();
+
+            changed |= Checkbox("Bomb pots", () => Config.BombPotEnabled, v => Config.BombPotEnabled = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Adds a Bomb pot option next to Deal: everyone puts in the same amount, no blinds, and the hand starts on the flop.");
+            if (Config.BombPotEnabled)
+            {
+                ImGui.SameLine();
+                var bomb = Config.BombPotAmount;
+                ImGui.SetNextItemWidth(140);
+                if (DealerControls.InputLong("Bomb pot amount (0 = two big blinds)", ref bomb))
+                {
+                    Config.BombPotAmount = Math.Max(0, bomb);
+                    changed = true;
+                }
+            }
+        }
+
+        if (SettingsHeader("Chat and announcements"))
+        {
+            var current = Channels.FirstOrDefault(c => c.Command == Config.Channel);
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.BeginCombo("Announce channel", current.Label ?? Config.Channel))
+            {
+                foreach (var (command, label) in Channels)
+                {
+                    if (ImGui.Selectable($"{label} ({command})", command == Config.Channel))
+                    {
+                        Config.Channel = command;
+                        changed = true;
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            changed |= Checkbox("Announce every action", () => Config.AnnounceActions, v => Config.AnnounceActions = v);
+            changed |= Checkbox("Send hole cards by /tell when dealing", () => Config.TellHoleCards, v => Config.TellHoleCards = v);
+            changed |= Checkbox("Re-tell each player their cards and hand after flop, turn and river", () => Config.RetellHandEachStreet, v => Config.RetellHandEachStreet = v);
+            changed |= Checkbox("Use suit symbols in chat", () => Config.ChatSuitSymbols, v =>
+            {
+                Config.ChatSuitSymbols = v;
+                Table.SuitSymbols = v;
+            });
+
+            var delay = Config.MessageDelayMs;
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderInt("Delay between chat messages (ms)", ref delay, 500, 5000))
+            {
+                Config.MessageDelayMs = delay;
                 changed = true;
             }
         }
 
-        var buyIn = Config.DefaultBuyIn;
-        ImGui.SetNextItemWidth(140);
-        if (DealerControls.InputLong("Default buy-in", ref buyIn))
+        if (SettingsHeader("Players' actions"))
         {
-            Config.DefaultBuyIn = Math.Max(0, buyIn);
-            changed = true;
+            changed |= Checkbox("Confirm actions (pick, then Confirm)", () => Config.ConfirmActions, v => Config.ConfirmActions = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Clicking an action only picks it and greys out the others; a separate Confirm button applies it.");
+            changed |= Checkbox($"Read player actions from {Config.Channel} chat", () => Config.ReadChatActions, v => Config.ReadChatActions = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("When the player to act types \"call\", \"fold\", \"check\", \"all in\", \"bet 5000\" or \"raise to 20k\",\n" +
+                                 "that action is picked for you. You still press Confirm.");
+            ImGui.BeginDisabled(!Config.ReadChatActions);
+            ImGui.Indent();
+            changed |= Checkbox("Also read actions sent to me by /tell", () => Config.ReadTellActions, v => Config.ReadTellActions = v);
+            ImGui.Unindent();
+            ImGui.EndDisabled();
         }
 
-        ImGui.TextUnformatted($"Hands dealt: {Table.HandNumber:N0} (next is #{Table.HandNumber + 1})");
-        ImGui.SameLine();
-        ImGui.BeginDisabled(Table.HandInProgress || Table.HandNumber == 0 || !ImGui.GetIO().KeyCtrl);
-        if (ImGui.Button("Reset hand #"))
+        if (SettingsHeader("This window"))
         {
-            Table.HandNumber = 0;
-            changed = true;
-        }
+            changed |= Checkbox("Use suit symbols in this window", () => Config.UiSuitSymbols, v => Config.UiSuitSymbols = v);
+            changed |= Checkbox("Show all hole cards in this window", () => Config.ShowHoleCards, v => Config.ShowHoleCards = v);
 
-        ImGui.EndDisabled();
-        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(Table.HandInProgress
-                ? "Finish or cancel the current hand first."
-                : "Hold Ctrl and click. The next hand dealt will be Hand #1. Stacks are not touched.");
-
-        ImGui.Separator();
-
-        var current = Channels.FirstOrDefault(c => c.Command == Config.Channel);
-        ImGui.SetNextItemWidth(220);
-        if (ImGui.BeginCombo("Announce channel", current.Label ?? Config.Channel))
-        {
-            foreach (var (command, label) in Channels)
+            var betDistance = Config.BetDistance;
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderInt("Bet chip distance from seat (table view)", ref betDistance, 0, 120))
             {
-                if (ImGui.Selectable($"{label} ({command})", command == Config.Channel))
-                {
-                    Config.Channel = command;
-                    changed = true;
-                }
+                Config.BetDistance = betDistance;
+                changed = true;
             }
-
-            ImGui.EndCombo();
-        }
-
-        changed |= Checkbox("Announce every action", () => Config.AnnounceActions, v => Config.AnnounceActions = v);
-        changed |= Checkbox("Send hole cards by /tell when dealing", () => Config.TellHoleCards, v => Config.TellHoleCards = v);
-        changed |= Checkbox("Re-tell each player their cards and hand after flop, turn and river", () => Config.RetellHandEachStreet, v => Config.RetellHandEachStreet = v);
-        changed |= Checkbox("Use suit symbols in chat", () => Config.ChatSuitSymbols, v =>
-        {
-            Config.ChatSuitSymbols = v;
-            Table.SuitSymbols = v;
-        });
-        changed |= Checkbox("Use suit symbols in this window", () => Config.UiSuitSymbols, v => Config.UiSuitSymbols = v);
-        changed |= Checkbox("Show all hole cards in this window", () => Config.ShowHoleCards, v => Config.ShowHoleCards = v);
-        changed |= Checkbox("Confirm actions (pick, then Confirm)", () => Config.ConfirmActions, v => Config.ConfirmActions = v);
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Clicking an action only picks it and greys out the others; a separate Confirm button applies it.");
-        changed |= Checkbox($"Read player actions from {Config.Channel} chat", () => Config.ReadChatActions, v => Config.ReadChatActions = v);
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("When the player to act types \"call\", \"fold\", \"check\", \"all in\", \"bet 5000\" or \"raise to 20k\",\n" +
-                             "that action is picked for you. You still press Confirm.");
-        ImGui.BeginDisabled(!Config.ReadChatActions);
-        ImGui.Indent();
-        changed |= Checkbox("Also read actions sent to me by /tell", () => Config.ReadTellActions, v => Config.ReadTellActions = v);
-        ImGui.Unindent();
-        ImGui.EndDisabled();
-
-        var delay = Config.MessageDelayMs;
-        ImGui.SetNextItemWidth(140);
-        if (ImGui.SliderInt("Delay between chat messages (ms)", ref delay, 500, 5000))
-        {
-            Config.MessageDelayMs = delay;
-            changed = true;
-        }
-
-        var betDistance = Config.BetDistance;
-        ImGui.SetNextItemWidth(140);
-        if (ImGui.SliderInt("Bet chip distance from seat (table view)", ref betDistance, 0, 120))
-        {
-            Config.BetDistance = betDistance;
-            changed = true;
         }
 
         if (changed)
             plugin.Save();
+    }
+
+    private static bool SettingsHeader(string label, bool open = false) =>
+        ImGui.CollapsingHeader(label, open ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None);
+
+    private static void LockedDuringHand(bool inHand)
+    {
+        if (inHand)
+            ImGui.TextColored(Muted, "Some of these can only change between hands.");
     }
 
     private void DrawLogTab()

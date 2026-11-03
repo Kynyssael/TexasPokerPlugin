@@ -397,6 +397,29 @@ public sealed class PlayersTab
             ImGui.SetTooltip("Once you've moved the rake out of the table's gil.");
         DrawPayHousePopup();
 
+        // Here too, not only in Settings, so the count can start again at the end of a night.
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Hands dealt");
+        ImGui.TableNextColumn();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted($"{Table.HandNumber:N0}");
+        ImGui.SameLine();
+        ImGui.BeginDisabled(Table.HandInProgress || Table.HandNumber == 0 || !ImGui.GetIO().KeyCtrl);
+        if (ImGui.SmallButton("Reset##hands"))
+        {
+            plugin.Chat.PrintLocal($"Hand count reset after {Table.HandNumber:N0} hands. The next hand is Hand #1.");
+            Table.HandNumber = 0;
+            plugin.Save();
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(Table.HandInProgress
+                ? "Finish or cancel the current hand first."
+                : "Hold Ctrl and click, e.g. at the end of a night. The next hand dealt will be Hand #1. Stacks are not touched.");
+
         ImGui.TableNextRow();
         ImGui.TableNextColumn();
         ImGui.TextColored(DealerControls.Gold, "Gil you should have on you");
