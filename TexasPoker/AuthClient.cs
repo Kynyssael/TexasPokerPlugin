@@ -80,10 +80,10 @@ public sealed class AuthClient : IDisposable
     public bool Unlocked => Confirmed && CharacterMatches;
 
     /// <summary>
-    /// Whether the dealer tools may be used. A hand that started while unlocked can always be finished,
-    /// so a sign-out or revoke never strands chips mid-hand.
+    /// Whether the dealer tools may be used: only once the terms of use are accepted. A hand that started
+    /// while unlocked can always be finished, so a sign-out or revoke never strands chips mid-hand.
     /// </summary>
-    public bool Allowed => Unlocked || (handGrace && plugin.Table.HandInProgress);
+    public bool Allowed => plugin.TermsAccepted && (Unlocked || (handGrace && plugin.Table.HandInProgress));
 
     public void Dispose() => framework.Update -= OnUpdate;
 

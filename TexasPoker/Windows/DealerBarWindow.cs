@@ -21,8 +21,8 @@ public sealed class DealerBarWindow : Window
     {
         if (!plugin.Auth.Allowed)
         {
-            ImGui.TextColored(DealerControls.Muted, "Sign in with XIVAuth to deal.");
-            if (ImGui.Button("Open sign-in"))
+            ImGui.TextColored(DealerControls.Muted, plugin.TermsAccepted ? "Sign in with XIVAuth to deal." : "Accept the terms of use to deal.");
+            if (ImGui.Button(plugin.TermsAccepted ? "Open sign-in" : "Open the terms"))
                 plugin.OpenMainWindow();
             return;
         }

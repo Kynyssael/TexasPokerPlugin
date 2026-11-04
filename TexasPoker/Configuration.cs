@@ -82,6 +82,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<string, string> MessageTemplates { get; set; } = new();
 
+    /// <summary>The version of the terms of use the dealer accepted (0 = never). See TermsPanel.Version.</summary>
+    public int AcceptedTermsVersion { get; set; }
+
     /// <summary>The table server's session key from signing in with XIVAuth. Empty when signed out.</summary>
     public string AuthSessionKey { get; set; } = string.Empty;
 

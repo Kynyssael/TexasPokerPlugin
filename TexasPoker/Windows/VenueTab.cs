@@ -116,14 +116,24 @@ public sealed class VenueTab
     {
         ImGui.PushID(venue.Id);
 
-        if (ImGui.BeginTable("##dealers", 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        // With the bad beat jackpot on, the owner picks whose tables play for it (and so take its cut).
+        var jackpot = venue.Promotions is { BadOn: true };
+        if (ImGui.BeginTable("##dealers", jackpot ? 3 : 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
         {
             ImGui.TableSetupColumn("dealer");
+            if (jackpot)
+                ImGui.TableSetupColumn("jackpot", ImGuiTableColumnFlags.WidthFixed, 170);
             ImGui.TableSetupColumn("remove", ImGuiTableColumnFlags.WidthFixed, 90);
 
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
             ImGui.TextUnformatted($"{venue.OwnerName}  (owner)");
+            if (jackpot)
+            {
+                ImGui.TableNextColumn();
+                DrawJackpotToggle(venue, "owner", venue.OwnerName, venue.OwnerJackpot);
+            }
+
             ImGui.TableNextColumn();
 
             foreach (var dealer in venue.Dealers)
@@ -136,6 +146,12 @@ public sealed class VenueTab
                 {
                     ImGui.SameLine();
                     ImGui.TextColored(DealerControls.Muted, "(added, hasn't signed in yet)");
+                }
+
+                if (jackpot)
+                {
+                    ImGui.TableNextColumn();
+                    DrawJackpotToggle(venue, dealer.Key, dealer.Label, dealer.Jackpot);
                 }
 
                 ImGui.TableNextColumn();
@@ -191,6 +207,23 @@ public sealed class VenueTab
         ImGui.Spacing();
         DrawPromotions(venue);
         ImGui.PopID();
+    }
+
+    private void DrawJackpotToggle(OwnedVenue venue, string key, string label, bool plays)
+    {
+        ImGui.BeginDisabled(busy);
+        if (ImGui.Checkbox("Bad beat jackpot##jp", ref plays))
+        {
+            var body = new StringContent(JsonSerializer.Serialize(new { key, on = plays }), Encoding.UTF8, "application/json");
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/jackpot", body,
+                 plays ? $"{label}'s table plays for the bad beat jackpot from its next hand."
+                       : $"{label}'s table is out of the bad beat jackpot from its next hand: no cut, and it can't hit it.");
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("On: this dealer's table takes the jackpot cut and can hit the jackpot.\n" +
+                             "Off: no cut from its pots, it can't hit the jackpot, and its table page doesn't show it.");
     }
 
     private void DrawPromotions(OwnedVenue venue)
@@ -545,7 +578,8 @@ public sealed class VenueTab
             dealers.Add(new VenueDealer(
                 d.GetProperty("key").GetString() ?? string.Empty,
                 d.GetProperty("label").GetString() ?? string.Empty,
-                d.GetProperty("pending").GetBoolean()));
+                d.GetProperty("pending").GetBoolean(),
+                !d.TryGetProperty("jackpot", out var plays) || plays.ValueKind != JsonValueKind.False));
         }
 
         var theme = v.TryGetProperty("theme", out var t) ? t : default;
@@ -561,12 +595,13 @@ public sealed class VenueTab
             v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty,
             ColourOf(theme, "felt"),
             ColourOf(theme, "accent"),
-            v.TryGetProperty("promotions", out var promo) && promo.ValueKind == JsonValueKind.Object ? OwnerPromotions.Parse(promo) : null);
+            v.TryGetProperty("promotions", out var promo) && promo.ValueKind == JsonValueKind.Object ? OwnerPromotions.Parse(promo) : null,
+            !v.TryGetProperty("ownerJackpot", out var ownerPlays) || ownerPlays.ValueKind != JsonValueKind.False);
     }
 
     private sealed record OwnedVenue(
         string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending,
-        string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions);
+        string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions, bool OwnerJackpot);
 
     /// <summary>The venue's promotion settings as the owner sees them, with the choices for the lists.</summary>
     private sealed record OwnerPromotions(
@@ -636,5 +671,5 @@ public sealed class VenueTab
         };
     }
 
-    private sealed record VenueDealer(string Key, string Label, bool Pending);
+    private sealed record VenueDealer(string Key, string Label, bool Pending, bool Jackpot);
 }

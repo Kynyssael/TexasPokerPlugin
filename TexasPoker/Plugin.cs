@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Chat;
@@ -182,6 +182,11 @@ public sealed class Plugin : IDalamudPlugin
     public void ToggleDealerBar() => dealerBarWindow.Toggle();
 
     public void OpenMainWindow() => mainWindow.IsOpen = true;
+
+    public void CloseMainWindow() => mainWindow.IsOpen = false;
+
+    /// <summary>The dealer has accepted the current terms of use.</summary>
+    public bool TermsAccepted => Configuration.AcceptedTermsVersion >= TermsPanel.Version;
 
     /// <summary>Opens the reference window on "Rules" or "Hand rankings".</summary>
     public void ShowReference(string tab) => referenceWindow.Show(tab);
@@ -375,7 +380,9 @@ public sealed class Plugin : IDalamudPlugin
         if (!Auth.Allowed && sub is "state" or "deal" or "bar")
         {
             // Everything but the reference sheets needs a signed-in dealer; the main window shows the sign-in.
-            Chat.PrintLocal("Sign in with XIVAuth first: /poker opens the sign-in.");
+            Chat.PrintLocal(TermsAccepted
+                ? "Sign in with XIVAuth first: /poker opens the sign-in."
+                : "Read and accept the terms of use first: /poker opens them.");
             mainWindow.IsOpen = true;
             return;
         }

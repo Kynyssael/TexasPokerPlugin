@@ -34,6 +34,9 @@ entry under *Dev Plugin Locations* → **Save**, and restart the game. Then inst
 
 ## Signing in
 
+The first time you open it, and again whenever they change, `/poker` shows the terms of use: tick *I have read and
+agree* and click **Accept and continue**. The sign-in comes after.
+
 The plugin is for approved dealers only. Until you sign in, `/poker` shows a sign-in screen instead of the table.
 
 1. Log in to the character you deal on, then click **Sign in with XIVAuth**.
@@ -132,6 +135,8 @@ A venue's owner can run a **high hand bonus** and a **bad beat jackpot**, shared
   with enough players dealt in, the plugin announces it and **pays the jackpot into the players' stacks**: by default
   50% to the loser, 25% to the winner and 25% shared by the rest of the table. 10% stays to start the next jackpot.
   The owner can also set the jackpot to an amount (Ctrl+click *Set jackpot*), e.g. to start it.
+  With the jackpot on, the dealer list has a *Bad beat jackpot* box per dealer, the owner included. Untick it and
+  that dealer's table takes no cut, can't hit the jackpot and doesn't show it, from its next hand.
 
 Dealers see the jackpot and the current high hand on the Table tab, and players see them on the table page and the
 venue page. The jackpot and the high hand are kept on the server, so every table of the venue shares them.

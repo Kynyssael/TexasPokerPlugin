@@ -36,6 +36,7 @@ public sealed class MainWindow : Window
     private readonly WebTab webTab;
     private readonly VenueTab venueTab;
     private readonly SignInPanel signInPanel;
+    private readonly TermsPanel termsPanel;
 
     public MainWindow(Plugin plugin, DealerControls controls)
         : base("Eorzean Poker###TexasPokerMain")
@@ -48,6 +49,7 @@ public sealed class MainWindow : Window
         webTab = new WebTab(plugin);
         venueTab = new VenueTab(plugin);
         signInPanel = new SignInPanel(plugin);
+        termsPanel = new TermsPanel(plugin);
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(680, 520) };
         Size = new Vector2(900, 760);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -59,6 +61,13 @@ public sealed class MainWindow : Window
 
     public override void Draw()
     {
+        // The terms come first, before signing in, the first time and whenever they change.
+        if (!plugin.TermsAccepted)
+        {
+            termsPanel.Draw();
+            return;
+        }
+
         if (!plugin.Auth.Allowed)
         {
             signInPanel.Draw();
