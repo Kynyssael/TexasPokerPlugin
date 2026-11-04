@@ -373,16 +373,20 @@ public sealed class WebPublisher : IDisposable
             var (name, world, amount, why) = pendingBonuses[i];
             var seat = Table.Seats.FirstOrDefault(s => s.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
                                                        s.World.Equals(world, StringComparison.OrdinalIgnoreCase));
+            // Either way the dealer pays it out of the table's gil, so it comes off the jackpot cuts they hold.
             if (seat is null)
             {
                 plugin.Chat.PrintLocal($"{name}@{world} isn't seated any more: pay them {amount:N0} ({why}) by hand.");
+                Table.JackpotHeld -= amount;
                 pendingBonuses.RemoveAt(i);
+                paid = true;
                 continue;
             }
 
             if (Table.HandInProgress && seat.InHand)
                 continue;
             Table.AwardBonus(seat, amount);
+            Table.JackpotHeld -= amount;
             pendingBonuses.RemoveAt(i);
             paid = true;
         }

@@ -168,9 +168,12 @@ public class PromotionTests
         table.Act(PlayerAction.AllIn);
 
         Assert.Equal(20, table.LastJackpotDrop);
+        Assert.Equal(20, table.JackpotHeld);
         Assert.Equal(100, table.HouseEarnings);
         Assert.Equal(1880, table.Seats[0].Stack);
         Assert.Equal(20, table.LastResults[0].Jackpot);
+        // Every gil is accounted for: stacks, the house's rake and the jackpot cut the dealer holds.
+        Assert.Equal(2000, table.Seats.Sum(s => s.Stack) + table.HouseEarnings + table.JackpotHeld);
         Assert.Contains("Main pot 1,880 to P0 (Three of a kind, Kings) (rake 100, jackpot 20)", lines);
     }
 
@@ -186,8 +189,10 @@ public class PromotionTests
         table.Act(PlayerAction.AllIn);
 
         Assert.Equal(20, table.LastJackpotDrop);
+        Assert.Equal(20, table.JackpotHeld);
         Assert.Equal(80, table.HouseEarnings);
         Assert.Equal(1900, table.Seats[0].Stack);
+        Assert.Equal(2000, table.Seats.Sum(s => s.Stack) + table.HouseEarnings + table.JackpotHeld);
     }
 
     [Fact]

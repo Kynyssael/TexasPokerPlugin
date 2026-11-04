@@ -383,7 +383,7 @@ public sealed class PlayersTab
     {
         var stacks = Table.Seats.Sum(s => s.Stack);
         var players = stacks + Table.Pot;
-        var total = players + Table.HouseEarnings;
+        var total = players + Table.HouseEarnings + Table.JackpotHeld;
 
         if (!ImGui.BeginTable("##gil", 2, ImGuiTableFlags.BordersOuter | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit))
             return;
@@ -408,6 +408,34 @@ public sealed class PlayersTab
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Once you've moved the rake out of the table's gil.");
         DrawPayHousePopup();
+
+        // Only once this table takes a jackpot cut (its venue runs the bad beat jackpot) or still holds some.
+        if (Table.JackpotHeld != 0 || Table.JackpotDropPercent > 0)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted("Bad beat jackpot cuts");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("What this table put into the venue's jackpot, still in your gil: give it to the venue's owner.\n" +
+                                 "A jackpot paid at your table comes off it. Below 0, the venue owes you that much.");
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            if (Table.JackpotHeld < 0)
+                ImGui.TextColored(DealerControls.Red, $"{Table.JackpotHeld:N0}  (venue owes you {-Table.JackpotHeld:N0})");
+            else
+                ImGui.TextUnformatted($"{Table.JackpotHeld:N0}");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(Table.JackpotHeld == 0);
+            if (ImGui.SmallButton(Table.JackpotHeld < 0 ? "Settled##jackpot" : "Hand over##jackpot"))
+                ImGui.OpenPopup("handjackpot");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip(Table.JackpotHeld < 0
+                    ? "Once the venue has paid you back."
+                    : "Once you've given the jackpot cuts to the venue's owner.");
+            DrawHandJackpotPopup();
+        }
 
         // Here too, not only in Settings, so the count can start again at the end of a night.
         ImGui.TableNextRow();
@@ -451,6 +479,31 @@ public sealed class PlayersTab
         {
             plugin.Chat.PrintLocal($"House rake paid out: {Table.HouseEarnings:N0} gil.");
             Table.HouseEarnings = 0;
+            plugin.Save();
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel", new Vector2(80, 28)))
+            ImGui.CloseCurrentPopup();
+        ImGui.EndPopup();
+    }
+
+    private void DrawHandJackpotPopup()
+    {
+        if (!ImGui.BeginPopup("handjackpot"))
+            return;
+
+        var held = Table.JackpotHeld;
+        ImGui.TextUnformatted(held < 0
+            ? $"Has the venue paid you back the {-held:N0} gil of jackpot you paid out?"
+            : $"Have you given the {held:N0} gil of jackpot cuts to the venue's owner?");
+        if (DealerControls.ColoredButton("Done - clear it", PayColor, new Vector2(150, 28)))
+        {
+            plugin.Chat.PrintLocal(held < 0
+                ? $"Jackpot paid back by the venue: {-held:N0} gil."
+                : $"Jackpot cuts handed over: {held:N0} gil.");
+            Table.JackpotHeld = 0;
             plugin.Save();
             ImGui.CloseCurrentPopup();
         }

@@ -137,6 +137,9 @@ A venue's owner can run a **high hand bonus** and a **bad beat jackpot**, shared
   The owner can also set the jackpot to an amount (Ctrl+click *Set jackpot*), e.g. to start it.
   With the jackpot on, the dealer list has a *Bad beat jackpot* box per dealer, the owner included. Untick it and
   that dealer's table takes no cut, can't hit the jackpot and doesn't show it, from its next hand.
+  Each dealer's Players tab shows **Bad beat jackpot cuts**: what their table put in, still in their gil, counted in
+  *Gil you should have on you*. A jackpot paid at their table comes off it (below 0, the venue owes them). *Hand
+  over* clears it once they've given the gil to the owner, or *Settled* once the venue has paid them back.
 
 Dealers see the jackpot and the current high hand on the Table tab, and players see them on the table page and the
 venue page. The jackpot and the high hand are kept on the server, so every table of the venue shares them.

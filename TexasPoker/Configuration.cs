@@ -76,6 +76,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public long HouseEarnings { get; set; }
 
+    /// <summary>Jackpot cuts the dealer holds for the venue (negative: jackpot they paid out of their own gil).</summary>
+    public long JackpotHeld { get; set; }
+
     /// <summary>
     /// The dealer's own wording for announcements, by message kind. Only changed messages are stored;
     /// the rest use the built-in wording.

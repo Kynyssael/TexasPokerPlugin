@@ -112,6 +112,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration.NoFlopNoDrop = Table.NoFlopNoDrop;
         Configuration.RunItTwice = Table.RunItTwice;
         Configuration.HouseEarnings = Table.HouseEarnings;
+        Configuration.JackpotHeld = Table.JackpotHeld;
         Configuration.MessageTemplates = Table.Messages.Overrides.ToDictionary(o => o.Key.ToString(), o => o.Value);
 
         // Mid-hand, save chips already bet as part of the stack so a crash or reload refunds the hand.
@@ -353,6 +354,7 @@ public sealed class Plugin : IDalamudPlugin
         Table.NoFlopNoDrop = Configuration.NoFlopNoDrop;
         Table.RunItTwice = Configuration.RunItTwice;
         Table.HouseEarnings = Configuration.HouseEarnings;
+        Table.JackpotHeld = Configuration.JackpotHeld;
         foreach (var (kind, text) in Configuration.MessageTemplates)
         {
             if (Enum.TryParse<MessageKind>(kind, out var parsed))

@@ -140,6 +140,12 @@ public sealed class Table
     /// <summary>Rake collected and not yet paid out by the dealer.</summary>
     public long HouseEarnings { get; set; }
 
+    /// <summary>
+    /// Bad beat jackpot cuts this table took and the dealer hasn't handed to the venue yet. Jackpots paid at this
+    /// table come off it, so it can go below 0: then the venue owes the dealer that much.
+    /// </summary>
+    public long JackpotHeld { get; set; }
+
     public long SmallBlind { get; set; } = 50;
 
     public long BigBlind { get; set; } = 100;
@@ -730,6 +736,7 @@ public sealed class Table
         }
 
         LastJackpotDrop = drop;
+        JackpotHeld += drop;
         return (rake, drop);
     }
 
