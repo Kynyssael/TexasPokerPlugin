@@ -37,6 +37,23 @@ public class TableTests
     }
 
     [Fact]
+    public void Actor_prompt_names_the_player_to_act_only_during_their_turn()
+    {
+        var table = NewTable(null, 1000, 1000, 1000);
+        Assert.Empty(table.ActorPrompt());
+
+        table.StartHand();
+        var actor = table.Actor!;
+        Assert.Equal([$"Action to {actor.Name}: 100 to call"], table.ActorPrompt());
+
+        table.Act(PlayerAction.Call);
+        Assert.Contains(table.Actor!.Name, table.ActorPrompt()[0]);
+
+        table.CancelHand();
+        Assert.Empty(table.ActorPrompt());
+    }
+
+    [Fact]
     public void Table_seats_at_most_seven_players()
     {
         var table = NewTable(null, 1000, 1000, 1000, 1000, 1000, 1000, 1000);

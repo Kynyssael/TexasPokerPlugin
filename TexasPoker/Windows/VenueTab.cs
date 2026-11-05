@@ -192,7 +192,7 @@ public sealed class VenueTab
 
         ImGui.EndDisabled();
         if (full)
-            ImGui.TextColored(DealerControls.Muted, "All seats are taken. Remove a dealer, or ask Elenor for more seats.");
+            ImGui.TextColored(DealerControls.Muted, "All seats are taken. Remove a dealer, or ask Elenor for more seats (Discord: elenoramdali).");
 
         ImGui.Spacing();
         ImGui.TextColored(DealerControls.Gold, "Venue page");

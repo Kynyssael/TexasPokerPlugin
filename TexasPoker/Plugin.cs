@@ -57,7 +57,7 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open the Texas Hold'em dealer table. /poker bar toggles the compact dealer bar, " +
-                          "/poker rules shows the rules, /poker hands the hand rankings.",
+                          "/poker rules shows the rules, /poker hands the hand rankings, /poker call says whose turn it is with a sound.",
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
@@ -193,6 +193,26 @@ public sealed class Plugin : IDalamudPlugin
     public void ShowReference(string tab) => referenceWindow.Show(tab);
 
     public void AnnounceState() => Chat.SayToTable(Table.DescribeState());
+
+    /// <summary>
+    /// Says whose turn it is again, with a chat sound so the table hears it: for a busy venue where the
+    /// action scrolls away. Uses the dealer's own "action to" wording.
+    /// </summary>
+    public void CallTurn()
+    {
+        var lines = Table.ActorPrompt();
+        if (lines.Count == 0)
+        {
+            Chat.PrintLocal("Nobody is to act right now.");
+            return;
+        }
+
+        var sound = $" <se.{Math.Clamp(Configuration.TurnSound, 1, 16)}>";
+        Chat.SayToTable(lines.Select((line, i) => i == 0 ? line + sound : line));
+    }
+
+    /// <summary>Plays a chat sound in the dealer's own chat only, to pick one.</summary>
+    public void PreviewTurnSound(int sound) => Chat.Echo($"Call turn sound: <se.{Math.Clamp(sound, 1, 16)}>");
     /// <summary>Re-sends hole cards to every player in the current hand.</summary>
     public void ResendHoleCards()
     {
@@ -379,7 +399,7 @@ public sealed class Plugin : IDalamudPlugin
     private void OnCommand(string command, string args)
     {
         var sub = args.Trim().ToLowerInvariant();
-        if (!Auth.Allowed && sub is "state" or "deal" or "bar")
+        if (!Auth.Allowed && sub is "state" or "deal" or "bar" or "call")
         {
             // Everything but the reference sheets needs a signed-in dealer; the main window shows the sign-in.
             Chat.PrintLocal(TermsAccepted
@@ -393,6 +413,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             case "state":
                 AnnounceState();
+                break;
+            case "call":
+                CallTurn();
                 break;
             case "bar":
                 ToggleDealerBar();

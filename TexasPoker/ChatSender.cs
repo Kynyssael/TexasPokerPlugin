@@ -48,6 +48,9 @@ public sealed class ChatSender : IDisposable
 
     public void Tell(string target, string message) => Enqueue($"/tell {target} {message}");
 
+    /// <summary>Queues an /echo: shown (and any &lt;se.N&gt; played) in the dealer's own chat only.</summary>
+    public void Echo(string message) => Enqueue($"/echo {message}");
+
     /// <summary>Prints a message to the dealer's own chat log only.</summary>
     public void PrintLocal(string message) => chatGui.Print(message, "Poker");
 
@@ -66,7 +69,7 @@ public sealed class ChatSender : IDisposable
             return;
 
         nextSend = DateTime.UtcNow.AddMilliseconds(Math.Max(500, config.MessageDelayMs));
-        if (config.SendToChat)
+        if (config.SendToChat || command.StartsWith("/echo ", StringComparison.Ordinal))
             Send(command);
         else
             PrintLocal($"(preview) {command}");

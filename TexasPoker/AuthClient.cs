@@ -237,7 +237,7 @@ public sealed class AuthClient : IDisposable
                     : "your character";
                 var reason = status switch
                 {
-                    "notapproved" => $"{who} isn't approved to deal yet. Ask Elenor, or your venue's owner to add it, then sign in again.",
+                    "notapproved" => $"{who} isn't approved to deal yet. Ask Elenor (Discord: elenoramdali), or your venue's owner to add it, then sign in again.",
                     "denied" => "The sign-in was cancelled on XIVAuth.",
                     "expired" => "The code expired before it was entered. Try again.",
                     "blocked" => "This character isn't allowed to use the plugin.",

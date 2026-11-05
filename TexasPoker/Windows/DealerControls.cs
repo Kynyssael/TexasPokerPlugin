@@ -130,6 +130,12 @@ public sealed class DealerControls
             Large(() => ImGui.TextColored(Gold, $">> {actor.Name} to act"), compact ? 1.1f : 1.3f);
             ImGui.SameLine();
             ImGui.TextColored(Muted, $"({prompt}, stack {actor.Stack:N0})");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Call turn"))
+                plugin.CallTurn();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"Says in chat whose turn it is, with a sound (<se.{plugin.Configuration.TurnSound}>), " +
+                                 "so a busy table can hear it.\nPick the sound in Settings > Chat and announcements. Also: /poker call");
 
             ActionButton("Fold", "fold", FoldColor, buttonSize, PlayerAction.Fold);
 

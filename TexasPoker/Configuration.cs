@@ -34,6 +34,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public int MessageDelayMs { get; set; } = 1500;
 
+    /// <summary>The game's chat sound (&lt;se.1&gt; to &lt;se.16&gt;) that Call turn plays.</summary>
+    public int TurnSound { get; set; } = 1;
+
     public bool ShowHoleCards { get; set; }
 
     /// <summary>Action buttons only pick the action; a separate Confirm button applies it.</summary>

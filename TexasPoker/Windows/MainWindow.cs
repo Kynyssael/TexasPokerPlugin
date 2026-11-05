@@ -407,6 +407,22 @@ public sealed class MainWindow : Window
                 Config.MessageDelayMs = delay;
                 changed = true;
             }
+
+            var sound = Config.TurnSound;
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderInt("Call turn sound", ref sound, 1, 16, "<se.%d>"))
+            {
+                Config.TurnSound = sound;
+                changed = true;
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("The game's chat sound that the Call turn button plays with its message.");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Hear it"))
+                plugin.PreviewTurnSound(Config.TurnSound);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Plays it in your own chat only (/echo).");
         }
 
         if (SettingsHeader("Players' actions"))

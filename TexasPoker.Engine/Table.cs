@@ -510,6 +510,10 @@ public sealed class Table
         return lines;
     }
 
+    /// <summary>The "action to" lines for the player to act now (the dealer's wording), or none between turns.</summary>
+    public IReadOnlyList<string> ActorPrompt() =>
+        Actor is { } actor ? Messages.Format(PromptKind(actor), PromptValues(actor)) : [];
+
     private void PostBlind(Seat seat, long amount, MessageKind kind)
     {
         var posted = Math.Min(amount, seat.Stack);

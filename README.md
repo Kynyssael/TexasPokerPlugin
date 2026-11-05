@@ -45,7 +45,7 @@ The plugin is for approved dealers only. Until you sign in, `/poker` shows a sig
 
 Only characters with a licence can sign in:
 
-- **Individual licence:** Elenor approves the character on the server.
+- **Individual licence:** Elenor approves the character on the server. Ask on Discord: `elenoramdali`.
 - **Venue licence:** the venue's owner adds the character as one of its dealers.
 
 A character without one gets "isn't approved to deal yet" and can sign in again once licensed. The plugin works
@@ -107,6 +107,8 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 2. **Settings** tab, in sections you open as needed: blinds and buy-in, rake, bomb pots and run it twice, chat and
    announcements, players' actions, and this window.
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.
+   *Call turn*, next to the player to act (or `/poker call`), says whose turn it is again in chat with a game sound,
+   for a busy venue. Pick the sound under Settings → Chat and announcements (*Hear it* plays it to you only).
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
 5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again.
 
