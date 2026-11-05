@@ -10,3 +10,6 @@ obj/
 
 # Zips to send to dealers
 dist/
+
+# Windows thumbnail caches
+Thumbs.db
