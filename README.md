@@ -190,3 +190,9 @@ Its README covers setting it up in a Proxmox container, HTTPS with Cloudflare Tu
 4. If one player's private link leaks, Ctrl+click *New link* on their row. The table link never changes.
    Private links made before 0.2.1 (`?p=…`) no longer show cards: tell players their new links once.
 5. To keep the same table link on another PC or after a reinstall, use *Move my table to another PC*: copy the backup code and restore it there.
+
+## Licence
+
+The code is public so anyone can read it and check what the plugin does, but it isn't open source. You may read
+it and build it unchanged to compare with the release. Changing it, getting around the sign-in or the terms of use,
+or sharing it or a build of it needs Elenor's permission. See [LICENSE](LICENSE).

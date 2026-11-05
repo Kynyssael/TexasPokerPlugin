@@ -1,0 +1,34 @@
+Eorzean Poker
+Copyright (c) 2026 Elenor. All rights reserved.
+
+This source code is published so that anyone can read it and check what the
+plugin does. It is not open source.
+
+You may:
+  - read the source code, and
+  - build it unchanged on your own computer to check that it matches the
+    released plugin.
+
+You may not, without written permission from Elenor:
+  - use the plugin, or any build of it, to deal games without a dealer licence
+    given under the Eorzean Poker terms of use;
+  - change the code, or remove or get around the sign-in, the licence check or
+    the terms of use;
+  - copy, publish, share, sell or otherwise distribute the code or any build
+    of it, changed or not, apart from the forks GitHub's own terms allow on
+    GitHub;
+  - use any part of the code in another project.
+
+Using the plugin also means accepting the terms of use it shows the first time
+it opens.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Eorzean Poker is a fan project. It is not made, endorsed or supported by
+Square Enix. FINAL FANTASY XIV is a registered trademark of Square Enix
+Holdings Co., Ltd.
