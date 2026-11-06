@@ -185,6 +185,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             var label = controls.PickFromChat(action);
             Chat.PrintLocal($"{seat.Name} (web): {label}. Press Confirm to apply.");
+            Record($"{seat.DisplayName} (web page): {label}, waiting for the dealer to confirm");
             return;
         }
 
@@ -192,10 +193,12 @@ public sealed class Plugin : IDalamudPlugin
         {
             Table.Act(action.Action, action.Amount);
             Chat.PrintLocal($"{seat.Name} acted from the web: {Table.LastAction}");
+            Record($"(that was {seat.DisplayName} from their web page)");
         }
         catch (InvalidOperationException ex)
         {
             Chat.PrintLocal($"{seat.Name}'s web action didn't go through: {ex.Message}");
+            Record($"{seat.DisplayName} (web page): sent {action.Action}, refused: {ex.Message}");
         }
     }
 
@@ -391,6 +394,8 @@ public sealed class Plugin : IDalamudPlugin
 
         var label = controls.PickFromChat(parsed);
         Chat.PrintLocal($"{actor.Name}{(isTell ? " (tell)" : string.Empty)}: \"{text.Trim()}\" -> {label}. Press Confirm to apply.");
+        // Word for word, for the records ("I said check, not call"). The action itself follows once confirmed.
+        Record($"{actor.DisplayName} ({(isTell ? "tell" : Configuration.Channel)}): \"{text.Trim()}\" -> read as {label}");
         if (!mainWindow.IsOpen && !dealerBarWindow.IsOpen)
             dealerBarWindow.IsOpen = true;
     }
