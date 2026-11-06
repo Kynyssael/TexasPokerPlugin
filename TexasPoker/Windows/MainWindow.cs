@@ -439,6 +439,26 @@ public sealed class MainWindow : Window
             changed |= Checkbox("Also read actions sent to me by /tell", () => Config.ReadTellActions, v => Config.ReadTellActions = v);
             ImGui.Unindent();
             ImGui.EndDisabled();
+
+            ImGui.Spacing();
+            changed |= Checkbox("Turn timer: check or fold for a player who takes too long", () => Config.TurnTimerEnabled, v => Config.TurnTimerEnabled = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("At half the time, the plugin calls the player's turn (like Call turn, with the sound).\n" +
+                                 "When the time is up, it checks for them if they can, otherwise folds their hand.\n" +
+                                 "Players see the countdown on the web table. Pause or More time are next to the player to act.");
+            ImGui.BeginDisabled(!Config.TurnTimerEnabled);
+            ImGui.Indent();
+            var timer = Config.TurnTimerSeconds;
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderInt("Seconds per turn", ref timer, 15, 300, "%d s"))
+            {
+                Config.TurnTimerSeconds = timer;
+                changed = true;
+            }
+
+            ImGui.TextColored(DealerControls.Muted, $"Turn called at {Config.TurnTimerSeconds / 2} s, check or fold at {Config.TurnTimerSeconds} s.");
+            ImGui.Unindent();
+            ImGui.EndDisabled();
         }
 
         if (SettingsHeader("This window"))

@@ -15,8 +15,8 @@ using Dalamud.Utility;
 namespace TexasPoker.Windows;
 
 /// <summary>
-/// The main window's Venue tab, shown to dealers with a venue licence. The venue's owner adds and
-/// removes its dealers here, up to the seats in the licence; other dealers see which venue they deal for.
+/// The main window's Venue tab, shown to dealers with a venue license. The venue's owner adds and
+/// removes its dealers here, up to the seats in the license; other dealers see which venue they deal for.
 /// </summary>
 public sealed class VenueTab
 {
@@ -71,15 +71,15 @@ public sealed class VenueTab
 
         if (!auth.Venues.Any(v => v.IsOwner))
         {
-            if (auth.HasIndividualLicence)
-                ImGui.TextColored(DealerControls.Muted, "You also have your own individual licence.");
+            if (auth.HasIndividualLicense)
+                ImGui.TextColored(DealerControls.Muted, "You also have your own individual license.");
             return;
         }
 
         if (!loaded && !busy)
             Load();
 
-        ImGui.TextWrapped("You own a venue licence. Add the dealers who deal for your venue: they can sign in to the plugin " +
+        ImGui.TextWrapped("You own a venue license. Add the dealers who deal for your venue: they can sign in to the plugin " +
                           "once added, and their tables show your venue's name and logo. You take one of the seats.");
         if (ImGui.SmallButton("Refresh"))
             Load();
@@ -161,7 +161,7 @@ public sealed class VenueTab
                          $"Removed {dealer.Label}.");
                 ImGui.EndDisabled();
                 if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                    ImGui.SetTooltip("Hold Ctrl and click. They're signed out unless they have another licence.");
+                    ImGui.SetTooltip("Hold Ctrl and click. They're signed out unless they have another license.");
                 ImGui.PopID();
             }
 

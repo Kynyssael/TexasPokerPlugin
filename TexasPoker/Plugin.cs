@@ -45,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
         Table.StreetDealt += OnStreetDealt;
 
         ChatGui.ChatMessage += OnChatMessage;
+        Framework.Update += OnUpdate;
 
         controls = new DealerControls(this);
         mainWindow = new MainWindow(this, controls);
@@ -84,6 +85,11 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>XIVAuth sign-in: the dealer tools only work for a signed-in, approved character.</summary>
     public AuthClient Auth { get; }
 
+    /// <summary>The turn timer (Settings: Players' actions), running while someone is to act.</summary>
+    public TurnClock Clock { get; } = new();
+
+    private DateTime? clockPublished;
+
     /// <summary>Everything the table has announced, newest last.</summary>
     public List<string> Log { get; } = new();
 
@@ -91,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Save();
         ChatGui.ChatMessage -= OnChatMessage;
+        Framework.Update -= OnUpdate;
         CommandManager.RemoveHandler(CommandName);
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= mainWindow.Toggle;
@@ -211,6 +218,65 @@ public sealed class Plugin : IDalamudPlugin
         Chat.SayToTable(lines.Select((line, i) => i == 0 ? line + sound : line));
     }
 
+    /// <summary>The turn timer's seconds per turn, or 0 while it's off (or the dealer isn't signed in).</summary>
+    private int TimerSeconds => Auth.Allowed && Configuration.TurnTimerEnabled ? Math.Clamp(Configuration.TurnTimerSeconds, 15, 300) : 0;
+
+    private void OnUpdate(IFramework _)
+    {
+        switch (Clock.Tick(Table, DateTime.UtcNow, TimerSeconds, controls.HasPicked))
+        {
+            case TurnClockEvent.CallTurn:
+                CallTurn();
+                break;
+            case TurnClockEvent.TimeUp:
+                TimeUp();
+                break;
+        }
+
+        // A new turn's deadline goes to the web table (players see the countdown). Paused, it waits for Resume.
+        if (!Clock.Paused && Clock.EndsAt != clockPublished)
+        {
+            clockPublished = Clock.EndsAt;
+            Web.Push();
+        }
+    }
+
+    /// <summary>The turn timer ran out: the player checks if they can, otherwise folds.</summary>
+    private void TimeUp()
+    {
+        if (Table.Actor is not { } actor)
+            return;
+
+        var check = Table.GetOptions().CanCheck;
+        Chat.SayToTable([$"Time's up, {actor.Name}: {(check ? "check" : "fold")}."]);
+        try
+        {
+            Table.Act(check ? PlayerAction.Check : PlayerAction.Fold);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Chat.PrintLocal($"The turn timer couldn't act for {actor.Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>The dealer gives the player to act their full time again.</summary>
+    public void MoreTime()
+    {
+        Clock.Restart(DateTime.UtcNow);
+        clockPublished = null; // send the new deadline
+    }
+
+    /// <summary>Stops or restarts the turn timer for the player to act (a ruling, a question...).</summary>
+    public void TogglePause()
+    {
+        if (Clock.Paused)
+            Clock.Resume(DateTime.UtcNow);
+        else
+            Clock.Pause(DateTime.UtcNow);
+        clockPublished = null;
+        Web.Push();
+    }
+
     /// <summary>Plays a chat sound in the dealer's own chat only, to pick one.</summary>
     public void PreviewTurnSound(int sound) => Chat.Echo($"Call turn sound: <se.{Math.Clamp(sound, 1, 16)}>");
     /// <summary>Re-sends hole cards to every player in the current hand.</summary>
@@ -273,6 +339,9 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.AnnounceActions)
             Chat.SayToTable(lines);
 
+        // Start the next turn's time now, so the one update sent for this action already carries it.
+        Clock.Sync(Table, DateTime.UtcNow, TimerSeconds);
+        clockPublished = Clock.EndsAt;
         Save();
     }
 

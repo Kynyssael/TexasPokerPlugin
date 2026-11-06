@@ -43,10 +43,10 @@ The plugin is for approved dealers only. Until you sign in, `/poker` shows a sig
 2. Your browser opens XIVAuth. Sign in there, choose that character and enter the code the plugin shows.
 3. The plugin unlocks. A sign-in lasts 30 days.
 
-Only characters with a licence can sign in:
+Only characters with a license can sign in:
 
-- **Individual licence:** Elenor approves the character on the server. Ask on Discord: `elenoramdali`.
-- **Venue licence:** the venue's owner adds the character as one of its dealers.
+- **Individual license:** Elenor approves the character on the server. Ask on Discord: `elenoramdali`.
+- **Venue license:** the venue's owner adds the character as one of its dealers.
 
 A character without one gets "isn't approved to deal yet" and can sign in again once licensed. The plugin works
 only while you're on the character you signed in with. If the server can't be reached, your last sign-in keeps
@@ -55,7 +55,7 @@ working for a day. If your sign-in ends mid-hand, you can still finish that hand
 **Venue owners** get a **Venue** tab, with a section per venue (open the one you want; with one venue it starts
 open). It shows how many of the venue's dealer seats are used and lists its dealers.
 Type a dealer as `First Last@World` (or use *Add my target*) to add them; they can sign in right away, even if they
-never have before. Ctrl+click *Remove* to take a dealer off, which signs them out unless they have another licence.
+never have before. Ctrl+click *Remove* to take a dealer off, which signs them out unless they have another license.
 Tables of a venue's dealers show the venue's name, logo and colours on the website. *Upload logo...* picks an image
 (PNG, JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can
 withdraw it. Under **Colours**, the owner picks the felt and an accent colour (trim, pot, titles) and clicks *Save
@@ -65,14 +65,14 @@ Every venue has a **venue page**, e.g. `eorzeanpoker.app/v/primal-den`, listing 
 them; *Open* and *Copy* are next to it on the Venue tab. Dealers who aren't the owner see which venue they deal for,
 and its page.
 
-A dealer with more than one licence (their own and a venue's, or several venues) picks **Show my table as** on the
+A dealer with more than one license (their own and a venue's, or several venues) picks **Show my table as** on the
 Web tab: *My own table* (no venue branding) or one of their venues.
 
 A table shown under a venue is listed on the venue's page. For a private game, untick **List my table on the
 venue page** on the Web tab: the table keeps the venue's name and logo, but only people with the link find it.
 
 The server side (XIVAuth app, `texaspoker allow`, `texaspoker venue ...`) is described in
-[TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#licences).
+[TexasPokerServer](https://github.com/Kynyssael/TexasPokerServer#licenses).
 
 ## Layout
 
@@ -109,6 +109,11 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.
    *Call turn*, next to the player to act (or `/poker call`), says whose turn it is again in chat with a game sound,
    for a busy venue. Pick the sound under Settings → Chat and announcements (*Hear it* plays it to you only).
+   **Turn timer** (off until you tick it under Settings → Players' actions, 15–300 s, 60 by default): at half the
+   time the plugin calls the player's turn, and when it runs out it checks for them if they can, otherwise folds
+   ("Time's up, Name: fold."). The countdown sits next to the player to act, with *Pause* (for a ruling) and *More
+   time* (their full time again); players see it on the web table. While you have an action picked, the time
+   waits for you to confirm it.
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
 5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again.
 
@@ -123,7 +128,7 @@ Both are off until you turn them on in the **Settings** tab, and any dealer can 
   come, the rest of the board is dealt twice, and each pot is split between the two boards (the first gets the odd
   chip). The website shows both boards. Hands run twice don't count for venue promotions.
 
-### Venue promotions (venue licence)
+### Venue promotions (venue license)
 
 A venue's owner can run a **high hand bonus** and a **bad beat jackpot**, shared by all of the venue's tables, in the
 **Promotions** part of the Venue tab. Each is off until the owner turns it on and clicks *Save promotions*.
@@ -193,7 +198,7 @@ Its README covers setting it up in a Proxmox container, HTTPS with Cloudflare Tu
    Private links made before 0.2.1 (`?p=…`) no longer show cards: tell players their new links once.
 5. To keep the same table link on another PC or after a reinstall, use *Move my table to another PC*: copy the backup code and restore it there.
 
-## Licence
+## License
 
 The code is public so anyone can read it and check what the plugin does, but it isn't open source. You may read
 it and build it unchanged to compare with the release. Changing it, getting around the sign-in or the terms of use,

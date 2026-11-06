@@ -25,7 +25,7 @@ public sealed class SignInPanel
         ImGui.SetWindowFontScale(1f);
         ImGui.TextWrapped("Eorzean Poker is for approved dealers. Sign in with XIVAuth, choosing the character " +
                           "you deal on. Only characters Elenor has authorized can sign in. " +
-                          "To get a licence, message Elenor on Discord: elenoramdali.");
+                          "To get a license, message Elenor on Discord: elenoramdali.");
         ImGui.Spacing();
 
         var playing = plugin.LocalCharacter;

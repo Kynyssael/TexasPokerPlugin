@@ -109,6 +109,32 @@ public sealed class DealerControls
             ImGui.TextColored(Muted, $"Last: {last}");
     }
 
+    /// <summary>The dealer has picked an action and not confirmed it yet (the turn timer waits for them).</summary>
+    public bool HasPicked => selected is not null;
+
+    /// <summary>The turn timer's countdown, with Pause and More time, next to the player to act.</summary>
+    private void DrawTurnTimer()
+    {
+        if (plugin.Clock.SecondsLeft(DateTime.UtcNow) is not { } left)
+            return;
+
+        var clock = plugin.Clock;
+        var total = Math.Max(1, plugin.Configuration.TurnTimerSeconds);
+        var color = clock.Paused ? Muted : left <= 10 ? new Vector4(1f, 0.42f, 0.42f, 1f) : left <= total / 2 ? Gold : new Vector4(0.4f, 0.82f, 0.5f, 1f);
+        ImGui.SameLine(0, 14);
+        ImGui.TextColored(color, clock.Paused ? $"Timer paused ({left} s)" : HasPicked && left == 0 ? "Time's up: confirm or pick" : $"{left} s");
+        ImGui.SameLine();
+        if (ImGui.SmallButton(clock.Paused ? "Resume" : "Pause"))
+            plugin.TogglePause();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Stops the turn timer for this player, e.g. for a ruling or a question.");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("More time"))
+            plugin.MoreTime();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip($"Gives {Table.Actor?.Name ?? "the player"} their full {total} s again.");
+    }
+
     /// <summary>Who is to act, the big action buttons, quick bets and dealer tools.</summary>
     public void DrawActionPanel(bool compact)
     {
@@ -136,6 +162,7 @@ public sealed class DealerControls
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip($"Says in chat whose turn it is, with a sound (<se.{plugin.Configuration.TurnSound}>), " +
                                  "so a busy table can hear it.\nPick the sound in Settings > Chat and announcements. Also: /poker call");
+            DrawTurnTimer();
 
             ActionButton("Fold", "fold", FoldColor, buttonSize, PlayerAction.Fold);
 

@@ -37,6 +37,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The game's chat sound (&lt;se.1&gt; to &lt;se.16&gt;) that Call turn plays.</summary>
     public int TurnSound { get; set; } = 1;
 
+    /// <summary>The turn timer: Call turn at half the time, then an automatic check (or fold) when it runs out.</summary>
+    public bool TurnTimerEnabled { get; set; }
+
+    public int TurnTimerSeconds { get; set; } = 60;
+
     public bool ShowHoleCards { get; set; }
 
     /// <summary>Action buttons only pick the action; a separate Confirm button applies it.</summary>
@@ -124,7 +129,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool WebActionsAuto { get; set; } = true;
 
     /// <summary>
-    /// Which licence the web table is shown under: "own" (individual licence, no venue branding), a venue
+    /// Which license the web table is shown under: "own" (individual license, no venue branding), a venue
     /// id, or empty for the server's default (the venue you own, else the first that added you).
     /// </summary>
     public string WebShowAs { get; set; } = string.Empty;

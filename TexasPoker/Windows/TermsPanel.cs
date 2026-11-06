@@ -22,12 +22,12 @@ public sealed class TermsPanel
         [
             "Dalamud plugins are third-party tools, which Square Enix's User Agreement doesn't allow. You use this plugin at your own risk, including any action taken against your account.",
         ]),
-        ("Your licence",
+        ("Your license",
         [
-            "Dealing needs a licence: one for your character from Elenor, or a dealer seat from a venue that has one.",
-            "A licence is for the character it was given to. Don't share your sign-in, sell or pass on access, or try to get around the sign-in.",
+            "Dealing needs a license: one for your character from Elenor, or a dealer seat from a venue that has one.",
+            "A license is for the character it was given to. Don't share your sign-in, sell or pass on access, or try to get around the sign-in.",
             "Don't copy, change or redistribute the plugin.",
-            "A licence can be taken away at any time, for example for breaking these terms.",
+            "A license can be taken away at any time, for example for breaking these terms.",
         ]),
         ("No real money",
         [

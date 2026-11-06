@@ -698,6 +698,7 @@ public sealed class WebPublisher : IDisposable
             turn = Table.Sequence,
             webActions = Config.WebActions,
             options = ActorOptions(),
+            clock = TurnClockJson(),
         };
 
         // Each player's own data, encrypted for their browser and filed under a lookup the server can't reverse.
@@ -717,6 +718,24 @@ public sealed class WebPublisher : IDisposable
 
         var showAs = Config.WebShowAs.Length > 0 ? Config.WebShowAs : null;
         return JsonSerializer.Serialize(new { state, privates, showAs, listed = Config.WebListOnVenuePage });
+    }
+
+    /// <summary>
+    /// The turn timer, for the countdown on the table page: the seconds left as this is sent, and the full time.
+    /// No clock times: the server stamps when it got this, so a wrong clock on this PC can't skew the countdown.
+    /// Null when no timer is running.
+    /// </summary>
+    private object? TurnClockJson()
+    {
+        var clock = plugin.Clock;
+        if (clock.EndsAt is not { } ends || Table.Actor is null)
+            return null;
+        return new
+        {
+            left = Math.Round(Math.Max(0, (ends - DateTime.UtcNow).TotalSeconds), 1),
+            total = Math.Clamp(Config.TurnTimerSeconds, 15, 300),
+            paused = clock.Paused,
+        };
     }
 
     /// <summary>What the player to act may do, for the buttons on their private page. Public: it's on the table anyway.</summary>

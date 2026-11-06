@@ -60,8 +60,8 @@ public sealed class AuthClient : IDisposable
     /// <summary>The venues the signed-in character owns or deals for, as of the last check.</summary>
     public IReadOnlyList<VenueMembership> Venues { get; private set; } = [];
 
-    /// <summary>The signed-in character has an individual licence (not only a venue seat).</summary>
-    public bool HasIndividualLicence { get; private set; }
+    /// <summary>The signed-in character has an individual license (not only a venue seat).</summary>
+    public bool HasIndividualLicense { get; private set; }
 
     private Configuration Config => plugin.Configuration;
 
@@ -225,7 +225,7 @@ public sealed class AuthClient : IDisposable
                         Config.AuthLodestoneId = lodestone;
                         Config.AuthConfirmedUtc = DateTime.UtcNow;
                         CancelSignIn();
-                        nextCheck = DateTime.MinValue; // fetch the licence details right away
+                        nextCheck = DateTime.MinValue; // fetch the license details right away
                         plugin.Save();
                         plugin.Chat.PrintLocal($"Signed in as {name}@{world}.");
                     });
@@ -299,7 +299,7 @@ public sealed class AuthClient : IDisposable
                     Config.AuthName = name;
                     Config.AuthWorld = world;
                     Venues = venues;
-                    HasIndividualLicence = individual;
+                    HasIndividualLicense = individual;
                     Config.AuthConfirmedUtc = DateTime.UtcNow;
                     Message = string.Empty;
                     nextCheck = DateTime.UtcNow + CheckEvery;
@@ -324,7 +324,7 @@ public sealed class AuthClient : IDisposable
         Config.AuthSessionKey = string.Empty;
         Config.AuthConfirmedUtc = null;
         Venues = [];
-        HasIndividualLicence = false;
+        HasIndividualLicense = false;
         Message = message;
         plugin.Save();
     }
@@ -343,6 +343,6 @@ public sealed class AuthClient : IDisposable
     });
 }
 
-/// <summary>A venue licence the signed-in character holds a seat in.</summary>
+/// <summary>A venue license the signed-in character holds a seat in.</summary>
 /// <summary>A venue the dealer owns or deals for. <see cref="Page"/> is its public page's path, e.g. "/v/primal-den".</summary>
 public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName, string Page);

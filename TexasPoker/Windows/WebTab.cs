@@ -110,7 +110,7 @@ public sealed class WebTab
     private void DrawListOnVenuePage()
     {
         var auth = plugin.Auth;
-        if (auth.Venues.Count == 0 || (Config.WebShowAs == "own" && auth.HasIndividualLicence))
+        if (auth.Venues.Count == 0 || (Config.WebShowAs == "own" && auth.HasIndividualLicense))
             return;
 
         var listed = Config.WebListOnVenuePage;
@@ -126,14 +126,14 @@ public sealed class WebTab
     }
 
     /// <summary>
-    /// For dealers with more than one licence (their own and a venue's, or several venues): which one the
-    /// table is shown under on the website. The server only honours a licence they really hold.
+    /// For dealers with more than one license (their own and a venue's, or several venues): which one the
+    /// table is shown under on the website. The server only honours a license they really hold.
     /// </summary>
     private void DrawShowAs()
     {
         var auth = plugin.Auth;
         var options = new List<(string Value, string Label)>();
-        if (auth.HasIndividualLicence)
+        if (auth.HasIndividualLicense)
             options.Add(("own", "My own table (no venue)"));
         foreach (var venue in auth.Venues)
             options.Add((venue.Id, venue.Name));
