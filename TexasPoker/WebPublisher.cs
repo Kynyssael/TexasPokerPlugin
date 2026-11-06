@@ -429,6 +429,7 @@ public sealed class WebPublisher : IDisposable
             if (seat is null)
             {
                 plugin.Chat.PrintLocal($"{name}@{world} isn't seated any more: pay them {amount:N0} ({why}) by hand.");
+                plugin.Record($"{why}: {amount:N0} gil to {name}@{world}, paid by hand (not seated).");
                 Table.JackpotHeld -= amount;
                 pendingBonuses.RemoveAt(i);
                 paid = true;
@@ -438,6 +439,7 @@ public sealed class WebPublisher : IDisposable
             if (Table.HandInProgress && seat.InHand)
                 continue;
             Table.AwardBonus(seat, amount);
+            plugin.Record($"{why}: {amount:N0} gil added to {seat.DisplayName}'s stack.");
             Table.JackpotHeld -= amount;
             pendingBonuses.RemoveAt(i);
             paid = true;

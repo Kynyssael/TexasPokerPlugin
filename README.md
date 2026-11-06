@@ -115,7 +115,15 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
    time* (their full time again); players see it on the web table. While you have an action picked, the time
    waits for you to confirm it.
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
-5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again.
+5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again,
+   and a new session log starts.
+
+**Session log, for your records.** The **Log** tab keeps the whole session, each line with the time: everything the
+table announced, plus the gil you took and paid (buy-ins, rebuys, adjustments, cash-outs with each player's net, rake
+and jackpot payouts, bonuses). It's written to a text file as it goes (`pluginConfigs/TexasPoker/Session logs`, one
+file per session), so a reload or a crash loses nothing: the plugin carries on with the same file. *Export...* saves a
+copy anywhere, *Copy all* puts it on the clipboard, *Open folder* shows every session's file, and Ctrl+click *New
+session* starts a new one. The tab shows the last 500 lines.
 
 ### Bomb pots and running it twice
 

@@ -25,6 +25,7 @@ public sealed class PlayersTab
     // The last thing done here, shown under the add row, with an optional way to take it back.
     private string notice = string.Empty;
     private Action? undoNotice;
+    private string? undoRecord;
 
     public PlayersTab(Plugin plugin, DealerControls controls)
     {
@@ -101,6 +102,8 @@ public sealed class PlayersTab
                 if (ImGui.SmallButton("Undo##notice"))
                 {
                     controls.Do(undo);
+                    if (undoRecord is { } undone)
+                        plugin.Record($"Undone: {undone}");
                     notice = string.Empty;
                     undoNotice = null;
                 }
@@ -122,7 +125,7 @@ public sealed class PlayersTab
         {
             var seat = Table.AddSeat(name, world, buyIn);
             Notify($"Seated {seat.DisplayName} with {buyIn:N0}. Collect {buyIn:N0} gil from them.",
-                   () => Table.RemoveSeat(seat));
+                   () => Table.RemoveSeat(seat), $"Seated {seat.DisplayName}: buy-in {buyIn:N0} gil collected.");
             if (clearInputs)
             {
                 newName = string.Empty;
@@ -152,7 +155,8 @@ public sealed class PlayersTab
 
             Notify($"Seated {string.Join(", ", added.Select(s => s.Name))}. Collect {buyIn:N0} gil from each." +
                    (left.Count > 0 ? $" No seat left for {string.Join(", ", left)}." : string.Empty),
-                   () => added.ForEach(Table.RemoveSeat));
+                   () => added.ForEach(Table.RemoveSeat),
+                   $"Seated {string.Join(", ", added.Select(s => s.DisplayName))}: buy-in {buyIn:N0} gil collected from each.");
         });
     }
 
@@ -257,7 +261,7 @@ public sealed class PlayersTab
             {
                 Table.AdjustChips(seat, rebuy);
                 Notify($"{seat.Name} rebought for {rebuy:N0}. Collect {rebuy:N0} gil from them.",
-                       () => Table.AdjustChips(seat, -rebuy));
+                       () => Table.AdjustChips(seat, -rebuy), $"{seat.DisplayName} rebought: {rebuy:N0} gil collected.");
             });
         }
 
@@ -316,7 +320,8 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.AdjustChips(seat, amount);
-                Notify($"Added {amount:N0} to {seat.Name}. Collect {amount:N0} gil from them.", () => Table.AdjustChips(seat, -amount));
+                Notify($"Added {amount:N0} to {seat.Name}. Collect {amount:N0} gil from them.", () => Table.AdjustChips(seat, -amount),
+                       $"Added {amount:N0} to {seat.DisplayName}'s stack: {amount:N0} gil collected.");
             });
             ImGui.CloseCurrentPopup();
         }
@@ -331,7 +336,8 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.AdjustChips(seat, -amount);
-                Notify($"Took {amount:N0} from {seat.Name}. Pay them {amount:N0} gil.", () => Table.AdjustChips(seat, amount));
+                Notify($"Took {amount:N0} from {seat.Name}. Pay them {amount:N0} gil.", () => Table.AdjustChips(seat, amount),
+                       $"Took {amount:N0} from {seat.DisplayName}'s stack: {amount:N0} gil paid.");
             });
             ImGui.CloseCurrentPopup();
         }
@@ -367,6 +373,7 @@ public sealed class PlayersTab
             {
                 Table.RemoveSeat(seat);
                 plugin.Chat.PrintLocal($"Cashed out {seat.DisplayName}: paid {stack:N0} gil (net {seat.Net:+#,0;-#,0;0}).");
+                plugin.Record($"Cashed out {seat.DisplayName}: {stack:N0} gil paid (bought in {seat.TotalBuyIn:N0}, net {seat.Net:+#,0;-#,0;0}).");
                 notice = $"Cashed out {seat.DisplayName} for {stack:N0}.";
                 undoNotice = null;
             });
@@ -449,7 +456,8 @@ public sealed class PlayersTab
         ImGui.BeginDisabled(Table.HandInProgress || Table.HandNumber == 0 || !ImGui.GetIO().KeyCtrl);
         if (ImGui.SmallButton("Reset##hands"))
         {
-            plugin.Chat.PrintLocal($"Hand count reset after {Table.HandNumber:N0} hands. The next hand is Hand #1.");
+            plugin.Chat.PrintLocal($"Hand count reset after {Table.HandNumber:N0} hands. The next hand is Hand #1. A new session log starts (Log tab).");
+            plugin.NewSessionLog();
             Table.HandNumber = 0;
             plugin.Save();
         }
@@ -478,6 +486,7 @@ public sealed class PlayersTab
         if (DealerControls.ColoredButton("Done - clear it", PayColor, new Vector2(150, 28)))
         {
             plugin.Chat.PrintLocal($"House rake paid out: {Table.HouseEarnings:N0} gil.");
+            plugin.Record($"House rake paid out: {Table.HouseEarnings:N0} gil.");
             Table.HouseEarnings = 0;
             plugin.Save();
             ImGui.CloseCurrentPopup();
@@ -500,9 +509,11 @@ public sealed class PlayersTab
             : $"Have you given the {held:N0} gil of jackpot cuts to the venue's owner?");
         if (DealerControls.ColoredButton("Done - clear it", PayColor, new Vector2(150, 28)))
         {
-            plugin.Chat.PrintLocal(held < 0
+            var line = held < 0
                 ? $"Jackpot paid back by the venue: {-held:N0} gil."
-                : $"Jackpot cuts handed over: {held:N0} gil.");
+                : $"Jackpot cuts handed over: {held:N0} gil.";
+            plugin.Chat.PrintLocal(line);
+            plugin.Record(line);
             Table.JackpotHeld = 0;
             plugin.Save();
             ImGui.CloseCurrentPopup();
@@ -523,9 +534,13 @@ public sealed class PlayersTab
         ImGui.TextUnformatted(value);
     }
 
-    private void Notify(string message, Action? undo)
+    /// <summary>Shows a notice (with Undo) and writes <paramref name="record"/> to the session log.</summary>
+    private void Notify(string message, Action? undo, string? record = null)
     {
         notice = message;
         undoNotice = undo;
+        undoRecord = record;
+        if (record is not null)
+            plugin.Record(record);
     }
 }

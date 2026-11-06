@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Dalamud.Game.Chat;
 using Dalamud.Game.ClientState.Objects.SubKinds;
@@ -19,7 +20,6 @@ namespace TexasPoker;
 public sealed class Plugin : IDalamudPlugin
 {
     private const string CommandName = "/poker";
-    private const int MaxLogLines = 300;
 
     private readonly WindowSystem windowSystem = new("TexasPoker");
     private readonly MainWindow mainWindow;
@@ -32,6 +32,10 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Table = new Table();
         LoadTable();
+
+        Log = new SessionLog(Path.Combine(PluginInterface.GetPluginConfigDirectory(), "Session logs"));
+        Log.Resume(Configuration.SessionLogFile, DateTime.Now);
+        Configuration.SessionLogFile = Log.FilePath ?? string.Empty;
 
         Chat = new ChatSender(Framework, ChatGui, Configuration);
         if (Configuration.WebTableId.Length == 0)
@@ -90,8 +94,20 @@ public sealed class Plugin : IDalamudPlugin
 
     private DateTime? clockPublished;
 
-    /// <summary>Everything the table has announced, newest last.</summary>
-    public List<string> Log { get; } = new();
+    /// <summary>The whole session: everything the table announced and the gil taken and paid, saved to a file.</summary>
+    public SessionLog Log { get; }
+
+    /// <summary>Adds a line to the session log that isn't said at the table (a buy-in, a cash-out...).</summary>
+    public void Record(string line) => Log.Add([line], DateTime.Now);
+
+    /// <summary>Ends this session's log (its file is kept) and starts a new one.</summary>
+    public void NewSessionLog()
+    {
+        Record($"=== Session ended after {Table.HandNumber:N0} hands ===");
+        Log.StartNew(DateTime.Now);
+        Configuration.SessionLogFile = Log.FilePath ?? string.Empty;
+        Save();
+    }
 
     public void Dispose()
     {
@@ -340,9 +356,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnAnnounced(IReadOnlyList<string> lines)
     {
-        Log.AddRange(lines);
-        if (Log.Count > MaxLogLines)
-            Log.RemoveRange(0, Log.Count - MaxLogLines);
+        Log.Add(lines, DateTime.Now);
 
         if (Configuration.AnnounceActions)
             Chat.SayToTable(lines);

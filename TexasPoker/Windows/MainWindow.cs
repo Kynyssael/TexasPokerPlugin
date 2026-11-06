@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Windowing;
 using TexasPoker.Engine;
 
@@ -36,6 +37,8 @@ public sealed class MainWindow : Window
     private readonly WebTab webTab;
     private readonly VenueTab venueTab;
     private readonly SignInPanel signInPanel;
+    private readonly FileDialogManager logDialog = new();
+    private string logStatus = string.Empty;
     private readonly TermsPanel termsPanel;
 
     public MainWindow(Plugin plugin, DealerControls controls)
@@ -488,14 +491,88 @@ public sealed class MainWindow : Window
             ImGui.TextColored(Muted, "Some of these can only change between hands.");
     }
 
+    /// <summary>The most recent lines shown here; the file and the export have the whole session.</summary>
+    private const int ShownLogLines = 500;
+
     private void DrawLogTab()
     {
-        if (ImGui.Button("Clear log"))
-            plugin.Log.Clear();
+        logDialog.Draw();
+        var log = plugin.Log;
+
+        if (ImGui.Button("Export..."))
+        {
+            var name = log.FilePath is { } file ? System.IO.Path.GetFileNameWithoutExtension(file) : "session";
+            logDialog.SaveFileDialog("Export the session log", ".txt", name, ".txt", (ok, path) =>
+            {
+                if (!ok)
+                    return;
+                try
+                {
+                    log.ExportTo(path);
+                    logStatus = $"Exported to {path}";
+                }
+                catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    logStatus = $"Couldn't export: {ex.Message}";
+                }
+            });
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Save a copy of this whole session's log, for your records.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Copy all"))
+        {
+            ImGui.SetClipboardText(string.Join(Environment.NewLine, log.Lines));
+            logStatus = $"Copied {log.Lines.Count:N0} lines.";
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Open folder"))
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(log.Folder);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = log.Folder, UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                logStatus = $"Couldn't open the folder: {ex.Message}";
+            }
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Every session's log is kept there, one file each.");
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+        if (ImGui.Button("New session"))
+        {
+            plugin.NewSessionLog();
+            logStatus = "New session started. The last one's file is kept.";
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold Ctrl and click to end this session's log and start a new one (the old file is kept).\n" +
+                             "Resetting Hands dealt in the Players tab does this too.");
+
+        if (log.Error is { } error)
+            ImGui.TextColored(DealerControls.Red, $"The log file can't be written: {error}");
+        else if (logStatus.Length > 0)
+            ImGui.TextColored(DealerControls.Muted, logStatus);
+        else
+            ImGui.TextColored(DealerControls.Muted, "The whole session is saved as it goes, and kept after a reload, until you start a new session.");
+
+        var lines = log.Lines;
+        var from = Math.Max(0, lines.Count - ShownLogLines);
+        if (from > 0)
+            ImGui.TextColored(DealerControls.Muted, $"Showing the last {ShownLogLines} of {lines.Count:N0} lines. Export or Copy all has them all.");
 
         ImGui.BeginChild("##log", Vector2.Zero, true);
-        foreach (var line in plugin.Log)
-            ImGui.TextWrapped(line);
+        for (var i = from; i < lines.Count; i++)
+            ImGui.TextWrapped(lines[i]);
         if (ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
             ImGui.SetScrollHereY(1f);
         ImGui.EndChild();

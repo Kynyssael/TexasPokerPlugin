@@ -42,6 +42,9 @@ public sealed class Configuration : IPluginConfiguration
 
     public int TurnTimerSeconds { get; set; } = 60;
 
+    /// <summary>The session log file being written (Log tab), picked up again after a reload until a new session.</summary>
+    public string SessionLogFile { get; set; } = string.Empty;
+
     public bool ShowHoleCards { get; set; }
 
     /// <summary>Action buttons only pick the action; a separate Confirm button applies it.</summary>
