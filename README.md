@@ -194,6 +194,11 @@ Its README covers setting it up in a Proxmox container, HTTPS with Cloudflare Tu
    Unticking the box takes the table off the website at once (its link shows "waiting" until you tick it again).
 2. *Post in /p* shares the table link. *Tell every player their private link* sends each player their own link by `/tell`.
 3. Links can't be clicked in game chat, so they're short enough to type. Players can also copy them with a chat plugin, or you can post them on Discord.
+   On a phone, the long private link is easy to mistype, so each tell also has a **seat PIN**: the player opens the
+   table link, taps their seat and enters the 4 digits. It works once, for 10 minutes, and 5 wrong tries for a seat
+   stop it: the dealer gets a notice in chat within a minute (someone may be guessing) and can tell them again for a new one.
+   Entering a PIN never kicks out a player who already has their cards open. The phone keeps the link, so they won't need another PIN when they come back.
+   The link goes to the server locked with the PIN, only while the PIN works, and the server hands it over only for the right PIN.
 4. If one player's private link leaks, Ctrl+click *New link* on their row. The table link never changes.
    Private links made before 0.2.1 (`?p=…`) no longer show cards: tell players their new links once.
 5. To keep the same table link on another PC or after a reinstall, use *Move my table to another PC*: copy the backup code and restore it there.

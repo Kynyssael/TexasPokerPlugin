@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -63,6 +64,9 @@ public sealed class WebPublisher : IDisposable
 
     // Set by the send loop, handled on the framework thread where the config is safe to change.
     private volatile bool claimedNow;
+
+    /// <summary>Seats ("Name@World") whose PIN the server stopped after 5 wrong tries, for the dealer to hear about.</summary>
+    private readonly ConcurrentQueue<string> pinLocks = new();
     private volatile bool retakeId;
 
     public WebPublisher(Plugin plugin, IFramework framework)
@@ -96,6 +100,15 @@ public sealed class WebPublisher : IDisposable
     /// <summary>The token goes after #, which browsers never send to a server.</summary>
     public string PlayerUrl(Seat seat) => $"{TableUrl}#{TokenFor(seat)}";
 
+    /// <summary>Seat PINs handed out, for players who'd rather tap their seat than type their link (see <see cref="SeatPins"/>).</summary>
+    public SeatPins Pins { get; } = new();
+
+    /// <summary>A new 4-digit PIN for this player's seat, sent to the server with the next update.</summary>
+    public string NewPin(Seat seat) => Pins.Issue(seat.DisplayName, DateTime.UtcNow);
+
+    /// <summary>The player's PIN while it still works, or null.</summary>
+    public string? PinOf(Seat seat) => Pins.PinOf(seat.DisplayName, DateTime.UtcNow);
+
     public static string NewId(int length) =>
         new(Enumerable.Range(0, length).Select(_ => Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]).ToArray());
 
@@ -116,12 +129,48 @@ public sealed class WebPublisher : IDisposable
         return token;
     }
 
+    /// <summary>
+    /// The seats the server says got 5 wrong PINs since the last update (newer servers only). Someone may be
+    /// guessing; the player's PIN no longer works and needs a new tell. A page already open isn't affected.
+    /// </summary>
+    public static string[] PinLocksFromPushAnswer(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty("pinLocks", out var locks) || locks.ValueKind != JsonValueKind.Array)
+                return [];
+            return locks.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!)
+                        .Where(x => x.Length is > 0 and <= 64)
+                        .Take(20)
+                        .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private void TellPinLocked(string seatName)
+    {
+        var seat = Table.Seats.FirstOrDefault(s => $"{s.Name}@{s.World}" == seatName);
+        if (seat is null)
+            return;
+        Pins.Forget(seat.DisplayName);
+        plugin.Chat.PrintLocal($"Someone typed 5 wrong PINs for {seat.Name}'s seat on the web table, so that PIN stopped working. " +
+                               "If they still need it, click Tell on their row in the Web tab for a new one. Anyone who already has their cards open isn't affected.");
+    }
+
     /// <summary>Forgets private links of players who left the table, so an old link can't follow them back.</summary>
     public void ForgetLinksOfAbsentPlayers()
     {
         var seated = Table.Seats.Select(s => s.DisplayName.ToLowerInvariant()).ToHashSet();
         foreach (var name in Config.WebTokens.Keys.Where(k => !seated.Contains(k)).ToList())
             Config.WebTokens.Remove(name);
+        Pins.KeepOnly(seated);
     }
 
     /// <summary>Queues the current table to be sent. Call on the framework thread.</summary>
@@ -209,6 +258,9 @@ public sealed class WebPublisher : IDisposable
 
         if (IsConfigured && DateTime.UtcNow >= nextHeartbeat)
             Push();
+
+        while (pinLocks.TryDequeue(out var locked))
+            TellPinLocked(locked);
 
         ApplyJackpotCut();
         QueueHandReport();
@@ -620,6 +672,8 @@ public sealed class WebPublisher : IDisposable
                     // Newer servers answer with the venue's promotions; older ones just say "ok".
                     var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     promotions = VenuePromotions.FromPushAnswer(body);
+                    foreach (var seat in PinLocksFromPushAnswer(body))
+                        pinLocks.Enqueue(seat);
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && !Config.WebTableClaimed)
                 {
@@ -716,8 +770,25 @@ public sealed class WebPublisher : IDisposable
                 })),
             });
 
+        // Seat PINs: the player's token locked with their PIN, filed under the PIN's lookup. "n" is the seat as the
+        // page names it, so the server can count wrong tries per seat. The seconds left, not a time: clocks differ.
+        var now = DateTime.UtcNow;
+        var live = Pins.Live(now);
+        var pins = Table.Seats.SelectMany(seat => live.Where(p => string.Equals(p.Player, seat.DisplayName, StringComparison.OrdinalIgnoreCase)).Select(p =>
+        {
+            var n = $"{seat.Name}@{seat.World}";
+            var secret = SeatPins.Secret(n, p.Pin);
+            return new
+            {
+                n,
+                k = CardSealer.Lookup(tableId, secret),
+                c = CardSealer.Seal(tableId, secret, JsonSerializer.Serialize(TokenFor(seat))),
+                ttl = (int)Math.Ceiling((p.Until - now).TotalSeconds),
+            };
+        })).ToList();
+
         var showAs = Config.WebShowAs.Length > 0 ? Config.WebShowAs : null;
-        return JsonSerializer.Serialize(new { state, privates, showAs, listed = Config.WebListOnVenuePage });
+        return JsonSerializer.Serialize(new { state, privates, pins, showAs, listed = Config.WebListOnVenuePage });
     }
 
     /// <summary>

@@ -188,6 +188,8 @@ public sealed class WebTab
 
         if (ImGui.Button("Tell every player their private link"))
             plugin.TellWebLinks();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Each tell has the link and a 4-digit PIN: on a phone, open the table page, tap your seat and enter the PIN.");
 
         ImGui.SameLine();
         ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
@@ -245,6 +247,14 @@ public sealed class WebTab
             ImGui.TableNextColumn();
             var link = Web.PlayerUrl(seat);
             ImGui.TextColored(DealerControls.Muted, link);
+            if (Web.PinOf(seat) is { } pin)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(DealerControls.Gold, $"PIN {pin}");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Sent with Tell. On the table page the player taps their seat and enters it. It works once, for 10 minutes.");
+            }
+
             ImGui.TableNextColumn();
             if (ImGui.SmallButton("Copy"))
                 ImGui.SetClipboardText(link);

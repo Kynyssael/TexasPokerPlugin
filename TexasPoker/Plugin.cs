@@ -148,8 +148,16 @@ public sealed class Plugin : IDalamudPlugin
         Save();
     }
 
-    public void TellWebLink(Seat seat) =>
-        TellPlayer(seat, $"Watch the table and see your cards (keep this link private): {Web.PlayerUrl(seat)}");
+    /// <summary>
+    /// The player's private link, and a seat PIN for a phone: open the table page, tap your seat, enter the PIN.
+    /// Call <see cref="Save"/> after, so the PIN reaches the server.
+    /// </summary>
+    public void TellWebLink(Seat seat)
+    {
+        var pin = Web.NewPin(seat);
+        TellPlayer(seat, $"See your cards: open {Web.TableUrl} , tap your seat and enter PIN {pin} (works once, for 10 minutes). " +
+                         $"Or use your private link (keep it private): {Web.PlayerUrl(seat)}");
+    }
 
     /// <summary>
     /// An action a player sent from their private page, already checked as genuine and current. Applied at
