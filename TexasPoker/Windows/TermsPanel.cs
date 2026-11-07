@@ -9,7 +9,7 @@ namespace TexasPoker.Windows;
 /// </summary>
 public sealed class TermsPanel
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     private static readonly (string Heading, string[] Lines)[] Sections =
     [
@@ -41,7 +41,9 @@ public sealed class TermsPanel
         ("Your data",
         [
             "Signing in sends your character's name, world and Lodestone ID (through XIVAuth) to the Eorzean Poker server.",
-            "When the web table is on, the table (players' names, stacks, bets and the board) is sent to eorzeanpoker.app, where anyone with the link can watch. Hole cards are encrypted so that only each player's private link can read them.",
+            "When the web table is on, the table (players' names, stacks, bets and the board) is sent to eorzeanpoker.app, where anyone with the link can watch. Hole cards are encrypted so that only each player's private link, or their one-time seat PIN, can open them.",
+            "A seat PIN works once, for 10 minutes, and only for the seat it was given to. After 5 wrong tries the seat's PIN stops working and you are told in chat.",
+            "The plugin keeps a log of each whole session on your PC (hands, gil moves, and players' chat and tell actions word for word). It stays on your PC unless you export or share it.",
         ]),
         ("No guarantees",
         [
