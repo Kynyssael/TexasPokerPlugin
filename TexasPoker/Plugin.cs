@@ -26,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ReferenceWindow referenceWindow;
     private readonly DealerBarWindow dealerBarWindow;
     private readonly DealerControls controls;
+    private readonly TradeWatcher tradeWatcher;
 
     public Plugin()
     {
@@ -44,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
             Configuration.WebTableKey = WebPublisher.NewId(32);
         Web = new WebPublisher(this, Framework);
         Auth = new AuthClient(this, Framework);
+        tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished);
         Table.Announced += OnAnnounced;
         Table.HoleCardsDealt += OnHoleCardsDealt;
         Table.StreetDealt += OnStreetDealt;
@@ -77,6 +79,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
     public Configuration Configuration { get; }
 
@@ -96,6 +99,15 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>The whole session: everything the table announced and the gil taken and paid, saved to a file.</summary>
     public SessionLog Log { get; }
+
+    /// <summary>Gil trades matched against buy-ins and cash-outs, and the ones waiting for the dealer.</summary>
+    public GilTrades Trades { get; } = new();
+
+    /// <summary>What the last trade meant, shown on the Players tab until the dealer clears it.</summary>
+    public TradeResult? LastTrade { get; set; }
+
+    /// <summary>The trade the plugin last put on a stack by itself, for Undo next to <see cref="LastTrade"/>.</summary>
+    public GilTrade? AutoAddedTrade { get; set; }
 
     /// <summary>Adds a line to the session log that isn't said at the table (a buy-in, a cash-out...).</summary>
     public void Record(string line) => Log.Add([line], DateTime.Now);
@@ -119,6 +131,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= mainWindow.Toggle;
         PluginInterface.UiBuilder.OpenConfigUi -= mainWindow.Toggle;
         windowSystem.RemoveAllWindows();
+        tradeWatcher.Dispose();
         Auth.Dispose();
         Web.Dispose();
         Chat.Dispose();
@@ -172,7 +185,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         var pin = Web.NewPin(seat);
         TellPlayer(seat, $"See your cards: open {Web.TableUrl} , tap your seat and enter PIN {pin} (works once, for 10 minutes). " +
-                         $"Or use your private link (keep it private): {Web.PlayerUrl(seat)}");
+                         $"Or use your private link (keep it private): {Web.PlayerUrl(seat)}", secret: true);
     }
 
     /// <summary>
@@ -250,6 +263,23 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnUpdate(IFramework _)
     {
+        // Trade gil the dealer asked to add once the player's hand was over.
+        if (!Table.HandInProgress)
+        {
+            foreach (var trade in Trades.Waiting.Where(t => t.AddWhenHandEnds).ToList())
+            {
+                try
+                {
+                    AddTradeToStack(trade);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    trade.AddWhenHandEnds = false;
+                    LastTrade = new TradeResult($"Couldn't add {trade.DisplayName}'s {trade.Amount:N0} gil: {ex.Message}", Warning: true);
+                }
+            }
+        }
+
         switch (Clock.Tick(Table, DateTime.UtcNow, TimerSeconds, controls.HasPicked))
         {
             case TurnClockEvent.CallTurn:
@@ -335,6 +365,134 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool IsLocalPlayer(Seat seat) => IsLocalPlayer(seat.Name, seat.World);
 
+    /// <summary>Whether this seat is you, the dealer, playing at your own table.</summary>
+    public bool IsDealer(Seat seat) => IsLocalPlayer(seat);
+
+    /// <summary>
+    /// Whether you're seated at your own table. While you are, the plugin keeps everyone else's cards from you:
+    /// "Show all hole cards" is off, and your copy of each card tell and link tell is hidden from your chat.
+    /// </summary>
+    public bool DealerPlaying => Table.Seats.Any(IsLocalPlayer);
+
+    /// <summary>Whether this window may show the seat's hole cards right now.</summary>
+    public bool ShowsCards(Seat seat) =>
+        (Table.Street == Street.HandOver && seat.Contending) ||
+        (DealerPlaying ? IsLocalPlayer(seat) : Configuration.ShowHoleCards);
+
+    /// <summary>The table expects gil to change hands with this player: above 0 you collect it, below 0 you pay it.</summary>
+    public void ExpectGil(Seat seat, long amount)
+    {
+        if (!IsLocalPlayer(seat))
+            Trades.Expect(seat.Name, amount, DateTime.UtcNow);
+    }
+
+    /// <summary>The seat a trade came from, if that player is seated.</summary>
+    public Seat? SeatOf(GilTrade trade) =>
+        Table.Seats.FirstOrDefault(s => s.Name.Equals(trade.Name, StringComparison.OrdinalIgnoreCase) &&
+                                        (trade.World.Length == 0 || s.World.Length == 0 ||
+                                         s.World.Equals(trade.World, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// Adds traded gil to the player's stack, as a rebuy. While they're in a hand it's held, and added when the hand
+    /// is over (a stack can't change mid-hand).
+    /// </summary>
+    /// <param name="quiet">The caller says what happened itself (no chat line or log line here).</param>
+    public void AddTradeToStack(GilTrade trade, bool quiet = false)
+    {
+        if (SeatOf(trade) is not { } seat)
+            throw new InvalidOperationException($"{trade.Name} isn't seated any more.");
+        if (Table.HandInProgress && seat.InHand)
+        {
+            trade.AddWhenHandEnds = true;
+            return;
+        }
+
+        Table.AdjustChips(seat, trade.Amount);
+        Trades.Dismiss(trade);
+        if (!quiet)
+        {
+            Record($"Added {trade.Amount:N0} gil from a trade to {seat.DisplayName}'s stack.");
+            Chat.PrintLocal($"Added {trade.Amount:N0} to {seat.Name}'s stack (from their trade).");
+        }
+
+        Save();
+    }
+
+    /// <summary>Seats the player who traded, with that gil as their buy-in.</summary>
+    public void SeatFromTrade(GilTrade trade)
+    {
+        var seat = Table.AddSeat(trade.Name, trade.World, trade.Amount);
+        Trades.Dismiss(trade);
+        Record($"Seated {seat.DisplayName} from a trade: buy-in {trade.Amount:N0} gil collected.");
+        Save();
+    }
+
+    /// <summary>
+    /// Takes back an automatic add: off the stack again (or no longer held for the hand's end), and back to waiting,
+    /// where the dealer can add it, seat someone with it, or ignore it.
+    /// </summary>
+    public void UndoAutoAdd()
+    {
+        if (AutoAddedTrade is not { } trade)
+            return;
+
+        if (!Trades.Waiting.Contains(trade))
+        {
+            if (SeatOf(trade) is not { } seat)
+                throw new InvalidOperationException($"{trade.Name} isn't seated any more.");
+            Table.AdjustChips(seat, -trade.Amount);
+        }
+
+        Trades.Hold(trade);
+        AutoAddedTrade = null;
+        LastTrade = null;
+        Record($"Undone: {trade.Amount:N0} gil from {trade.DisplayName}'s trade taken back off their stack.");
+        Save();
+    }
+
+    /// <summary>The dealer leaves a trade out of the table (a tip, a payback, a mistake).</summary>
+    public void IgnoreTrade(GilTrade trade)
+    {
+        Trades.Dismiss(trade);
+        Record($"Trade from {trade.DisplayName} for {trade.Amount:N0} gil left out of the table.");
+    }
+
+    private void OnTradeFinished(string name, string world, long amount)
+    {
+        if (!Auth.Allowed || amount == 0)
+            return;
+
+        var result = Trades.Settle(new GilTrade(name, world, amount, DateTime.UtcNow));
+        AutoAddedTrade = null;
+
+        // A seated player's extra gil goes straight on their stack (after their hand, if they're in one).
+        if (Configuration.AutoAddTrades &&
+            Trades.Waiting.LastOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } trade &&
+            SeatOf(trade) is { } seat)
+        {
+            var held = Table.HandInProgress && seat.InHand;
+            AddTradeToStack(trade, quiet: true);
+            AutoAddedTrade = trade;
+            result = new TradeResult(held
+                ? $"{trade.DisplayName} gave you {trade.Amount:N0} gil: it goes on their stack when their hand is over."
+                : $"{trade.DisplayName} gave you {trade.Amount:N0} gil: added to their stack.", Warning: false);
+        }
+
+        LastTrade = result;
+        var waiting = Trades.Waiting.Any(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && !t.AddWhenHandEnds);
+        Chat.PrintLocal(waiting ? $"{result.Message} (Players tab)" : result.Message);
+        Record($"Trade: {result.Message}");
+    }
+
+    /// <summary>Tells the table the dealer has sat down to play, so nobody is surprised by it.</summary>
+    public void AnnounceDealerPlaying(Seat seat)
+    {
+        var line = $"The dealer ({seat.Name}) is playing at this table. The plugin hides everyone else's cards from the dealer, " +
+                   "but you are trusting the dealer.";
+        Chat.SayToTable([line]);
+        Record(line);
+    }
+
     /// <summary>Whether you're logged in as this exact character (name and home world).</summary>
     public bool IsLocalCharacter(string name, string world) => world.Length > 0 && IsLocalPlayer(name, world);
 
@@ -376,6 +534,14 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private void OnChatMessage(IHandleableChatMessage message)
     {
+        // Your own copy of a card or link tell, while you play: the player got it, you don't see it.
+        if (message.LogKind == XivChatType.TellOutgoing &&
+            (Chat.TakeHiddenEcho(message.Message.TextValue) || (DealerPlaying && IsSecretTell(message.Message.TextValue))))
+        {
+            message.PreventOriginal();
+            return;
+        }
+
         if (!Auth.Allowed || !Configuration.ReadChatActions || !Table.HandInProgress || Table.Actor is not { } actor)
             return;
 
@@ -399,6 +565,13 @@ public sealed class Plugin : IDalamudPlugin
         if (!mainWindow.IsOpen && !dealerBarWindow.IsOpen)
             dealerBarWindow.IsOpen = true;
     }
+
+    /// <summary>
+    /// A card or link tell by its wording, in case the game changed the text a little (suit symbols, spacing)
+    /// so it no longer matches the one queued.
+    /// </summary>
+    private static bool IsSecretTell(string text) =>
+        text.Contains("your cards", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The chat types that count as the table channel, from the configured command.</summary>
     private XivChatType[] TableChannelTypes() => Configuration.Channel switch
@@ -441,20 +614,23 @@ public sealed class Plugin : IDalamudPlugin
         {
             var hand = Table.CurrentHand(seat);
             TellPlayer(seat, $"{street}: your cards {Card.Join(seat.HoleCards, symbols)}" +
-                             (hand is { } value ? $" - {value.Describe()}" : string.Empty));
+                             (hand is { } value ? $" - {value.Describe()}" : string.Empty), secret: true);
         }
     }
 
     private void SendHoleCards(Seat seat, IReadOnlyList<Card> cards)
     {
-        TellPlayer(seat, $"Hand #{Table.HandNumber}: your cards are {Card.Join(cards, Configuration.ChatSuitSymbols)}");
+        TellPlayer(seat, $"Hand #{Table.HandNumber}: your cards are {Card.Join(cards, Configuration.ChatSuitSymbols)}", secret: true);
     }
 
-    private void TellPlayer(Seat seat, string message)
+    /// <param name="secret">Hole cards or a private link: while you play, your own copy of the tell is hidden.</param>
+    private void TellPlayer(Seat seat, string message, bool secret = false)
     {
         // You can't /tell yourself, so a dealer who is also playing sees the message locally.
         if (IsLocalPlayer(seat))
             Chat.PrintLocal(message);
+        else if (secret && DealerPlaying)
+            Chat.TellHidden(seat.DisplayName, message);
         else
             Chat.Tell(seat.DisplayName, message);
     }

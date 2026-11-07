@@ -246,8 +246,15 @@ public sealed class WebTab
             ImGui.TextUnformatted(seat.Name);
             ImGui.TableNextColumn();
             var link = Web.PlayerUrl(seat);
-            ImGui.TextColored(DealerControls.Muted, link);
-            if (Web.PinOf(seat) is { } pin)
+            // While you play, other players' links and PINs would show you their cards, so they're hidden.
+            var hidden = plugin.DealerPlaying && !plugin.IsDealer(seat);
+            ImGui.TextColored(DealerControls.Muted, hidden ? "(hidden while you play)" : link);
+            if (hidden)
+            {
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("You're seated at your own table. Tell still sends them their link and PIN; you won't see it.");
+            }
+            else if (Web.PinOf(seat) is { } pin)
             {
                 ImGui.SameLine();
                 ImGui.TextColored(DealerControls.Gold, $"PIN {pin}");
@@ -256,8 +263,10 @@ public sealed class WebTab
             }
 
             ImGui.TableNextColumn();
+            ImGui.BeginDisabled(hidden);
             if (ImGui.SmallButton("Copy"))
                 ImGui.SetClipboardText(link);
+            ImGui.EndDisabled();
             ImGui.SameLine();
             if (ImGui.SmallButton("Tell"))
             {

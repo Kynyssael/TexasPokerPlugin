@@ -56,6 +56,12 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Also read actions players send the dealer by /tell.</summary>
     public bool ReadTellActions { get; set; } = true;
 
+    /// <summary>
+    /// Gil a seated player trades you, beyond any buy-in already entered, goes straight onto their stack (after their
+    /// hand, if they're in one). Off: it waits on the Players and Table tabs for you to add it.
+    /// </summary>
+    public bool AutoAddTrades { get; set; } = true;
+
     /// <summary>Show players around a drawn poker table (dealer at the bottom) instead of a list.</summary>
     public bool TableView { get; set; } = true;
 

@@ -48,6 +48,9 @@ public sealed class TableView
 
     private Configuration Config => plugin.Configuration;
 
+    /// <summary>A seat the dealer right-clicked this frame, for the seat menu (Rebuy, Adjust, Sit out, Cash out).</summary>
+    public Seat? MenuRequested { get; set; }
+
     public void Draw(float height)
     {
         var width = ImGui.GetContentRegionAvail().X;
@@ -210,7 +213,7 @@ public sealed class TableView
         // Cards on the right, status text on the left of the bottom row.
         if (seat.InHand && seat.HoleCards.Count > 0 && !seat.Folded)
         {
-            var reveal = Config.ShowHoleCards || (Table.Street == Street.HandOver && seat.Contending);
+            var reveal = plugin.ShowsCards(seat);
             for (var c = 0; c < seat.HoleCards.Count; c++)
             {
                 var cardMin = new Vector2(max.X - 8 - ((SmallCard.X + 3) * (2 - c)) + 3, max.Y - SmallCard.Y - 6);
@@ -254,10 +257,13 @@ public sealed class TableView
             draw.AddText(textPos, White, amount);
         }
 
-        if (ImGui.IsMouseHoveringRect(min, max))
+        if (ImGui.IsMouseHoveringRect(min, max) && ImGui.IsWindowHovered())
         {
             ImGui.SetTooltip($"{seat.DisplayName}\nStack {seat.Stack:N0}\nBought in {seat.TotalBuyIn:N0}\n" +
-                             $"Net {seat.Net:+#,0;-#,0;0}" + (seat.StreetBet > 0 ? $"\nBet this round {seat.StreetBet:N0}" : string.Empty));
+                             $"Net {seat.Net:+#,0;-#,0;0}" + (seat.StreetBet > 0 ? $"\nBet this round {seat.StreetBet:N0}" : string.Empty) +
+                             "\nRight-click: rebuy, adjust, sit out, cash out");
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                MenuRequested = seat;
         }
     }
 

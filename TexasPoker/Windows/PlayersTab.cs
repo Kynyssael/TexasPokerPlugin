@@ -20,6 +20,9 @@ public sealed class PlayersTab
     private string newName = string.Empty;
     private string newWorld = string.Empty;
     private long newBuyIn;
+
+    /// <summary>The buy-in the seat buttons use, as set on this tab.</summary>
+    public long BuyIn => newBuyIn;
     private long adjustAmount;
 
     // The last thing done here, shown under the add row, with an optional way to take it back.
@@ -40,11 +43,89 @@ public sealed class PlayersTab
 
     public void Draw()
     {
+        DrawTrades();
         DrawAddPlayers();
         ImGui.Spacing();
         DrawSeats();
         ImGui.Spacing();
         DrawGilSummary();
+    }
+
+    /// <summary>What the last trade meant, and gil traded to you that no buy-in explains, for the dealer to place.</summary>
+    public void DrawTrades()
+    {
+        if (plugin.LastTrade is { } last)
+        {
+            ImGui.TextColored(last.Warning ? DealerControls.Red : DealerControls.Muted, $"Trade: {last.Message}");
+            if (plugin.AutoAddedTrade is not null)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Undo##trade"))
+                    controls.Do(plugin.UndoAutoAdd);
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Not for their stack (a tip, a payback): take it back off, and choose what to do with it.");
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("OK##trade"))
+            {
+                plugin.LastTrade = null;
+                plugin.AutoAddedTrade = null;
+            }
+        }
+
+        var waiting = plugin.Trades.Waiting;
+        if (waiting.Count == 0)
+        {
+            if (plugin.LastTrade is not null)
+                ImGui.Spacing();
+            return;
+        }
+
+        ImGui.TextColored(DealerControls.Gold, "Gil traded to you");
+        foreach (var trade in waiting.ToList())
+        {
+            ImGui.PushID($"{trade.DisplayName}{trade.At.Ticks}");
+            ImGui.Bullet();
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{trade.Name} gave you {trade.Amount:N0} gil");
+            ImGui.SameLine();
+            if (plugin.SeatOf(trade) is { } seat)
+            {
+                if (trade.AddWhenHandEnds)
+                {
+                    ImGui.TextColored(DealerControls.Muted, "(added when their hand is over)");
+                }
+                else
+                {
+                    var inHand = Table.HandInProgress && seat.InHand;
+                    if (ImGui.SmallButton(inHand ? "Add after this hand" : "Add to stack"))
+                        controls.Do(() => plugin.AddTradeToStack(trade));
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip(inHand
+                            ? "They're in the hand, so it's added to their stack as soon as the hand is over."
+                            : $"A rebuy: {trade.Amount:N0} onto {seat.Name}'s stack.");
+                }
+            }
+            else
+            {
+                ImGui.BeginDisabled(Table.Seats.Count >= Table.MaxSeats);
+                if (ImGui.SmallButton($"Seat with {trade.Amount:N0}"))
+                    controls.Do(() => plugin.SeatFromTrade(trade));
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip(Table.Seats.Count >= Table.MaxSeats ? "The table is full." : "Seat them, with this gil as their buy-in.");
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Ignore"))
+                plugin.IgnoreTrade(trade);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Not for the table (a tip, a payback, a mistake). Trade it back yourself if needed.");
+            ImGui.PopID();
+        }
+
+        ImGui.Spacing();
     }
 
     private void DrawAddPlayers()
@@ -75,6 +156,17 @@ public sealed class PlayersTab
             Seat(newName, newWorld, clearInputs: true);
         ImGui.EndDisabled();
 
+        DrawSeatButtons();
+        ImGui.SameLine();
+        ImGui.TextColored(DealerControls.Muted, $"Each with a {newBuyIn:N0} buy-in");
+        ImGui.EndDisabled();
+
+        DrawNotice();
+    }
+
+    /// <summary>Seat my target, Seat me and Seat whole party, with the buy-in set on this tab. Also on the Table tab.</summary>
+    public void DrawSeatButtons()
+    {
         if (ImGui.Button("Seat my target"))
         {
             if (plugin.GetTargetPlayer() is { } target)
@@ -84,15 +176,26 @@ public sealed class PlayersTab
         }
 
         ImGui.SameLine();
+        ImGui.BeginDisabled(plugin.DealerPlaying || plugin.LocalCharacter is null);
+        if (ImGui.Button("Seat me"))
+            SeatMe();
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(plugin.DealerPlaying
+                ? "You're already seated."
+                : "Play at your own table, for when only one player is here. Your buy-in comes from your own gil.\n" +
+                  "The table is told in chat. While you're seated, everyone else's cards are hidden from you.");
+
+        ImGui.SameLine();
         if (ImGui.Button("Seat whole party"))
             SeatParty();
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Seats everyone in your party except you, the dealer.");
+    }
 
-        ImGui.SameLine();
-        ImGui.TextColored(DealerControls.Muted, $"Each with a {newBuyIn:N0} buy-in");
-        ImGui.EndDisabled();
-
+    /// <summary>The last seating or gil change, with Undo. Also on the Table tab.</summary>
+    public void DrawNotice()
+    {
         if (notice.Length > 0)
         {
             ImGui.TextColored(DealerControls.Good, notice);
@@ -124,14 +227,30 @@ public sealed class PlayersTab
         controls.Do(() =>
         {
             var seat = Table.AddSeat(name, world, buyIn);
+            if (plugin.IsDealer(seat))
+            {
+                Notify($"You're seated with {buyIn:N0}, from your own gil. Everyone else's cards are now hidden from you.",
+                       () => Table.RemoveSeat(seat), $"Seated the dealer, {seat.DisplayName}: buy-in {buyIn:N0} gil from their own.");
+                plugin.AnnounceDealerPlaying(seat);
+                return;
+            }
+
+            plugin.ExpectGil(seat, buyIn);
             Notify($"Seated {seat.DisplayName} with {buyIn:N0}. Collect {buyIn:N0} gil from them.",
-                   () => Table.RemoveSeat(seat), $"Seated {seat.DisplayName}: buy-in {buyIn:N0} gil collected.");
+                   () => { plugin.ExpectGil(seat, -buyIn); Table.RemoveSeat(seat); }, $"Seated {seat.DisplayName}: buy-in {buyIn:N0} gil collected.");
             if (clearInputs)
             {
                 newName = string.Empty;
                 newWorld = string.Empty;
             }
         });
+    }
+
+    private void SeatMe()
+    {
+        if (plugin.LocalCharacter?.Split('@') is not [var name, var world])
+            return;
+        Seat(name, world, clearInputs: false);
     }
 
     private void SeatParty()
@@ -152,10 +271,11 @@ public sealed class PlayersTab
                 throw new InvalidOperationException($"The table is full ({Table.MaxSeats} players). Cash someone out first.");
             var added = waiting.Take(free).Select(m => Table.AddSeat(m.Name, m.World, buyIn)).ToList();
             var left = waiting.Skip(free).Select(m => m.Name).ToList();
+            added.ForEach(s => plugin.ExpectGil(s, buyIn));
 
             Notify($"Seated {string.Join(", ", added.Select(s => s.Name))}. Collect {buyIn:N0} gil from each." +
                    (left.Count > 0 ? $" No seat left for {string.Join(", ", left)}." : string.Empty),
-                   () => added.ForEach(Table.RemoveSeat),
+                   () => added.ForEach(s => { plugin.ExpectGil(s, -buyIn); Table.RemoveSeat(s); }),
                    $"Seated {string.Join(", ", added.Select(s => s.DisplayName))}: buy-in {buyIn:N0} gil collected from each.");
         });
     }
@@ -249,7 +369,7 @@ public sealed class PlayersTab
             ImGui.SetTooltip(Table.HandInProgress ? "Seats can't move during a hand." : "Move one seat later.");
     }
 
-    private void DrawSeatActions(Seat seat)
+    public void DrawSeatActions(Seat seat)
     {
         var busyInHand = Table.HandInProgress && seat.InHand;
         var rebuy = Config.DefaultBuyIn;
@@ -260,8 +380,9 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.AdjustChips(seat, rebuy);
+                plugin.ExpectGil(seat, rebuy);
                 Notify($"{seat.Name} rebought for {rebuy:N0}. Collect {rebuy:N0} gil from them.",
-                       () => Table.AdjustChips(seat, -rebuy), $"{seat.DisplayName} rebought: {rebuy:N0} gil collected.");
+                       () => { plugin.ExpectGil(seat, -rebuy); Table.AdjustChips(seat, -rebuy); }, $"{seat.DisplayName} rebought: {rebuy:N0} gil collected.");
             });
         }
 
@@ -320,7 +441,9 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.AdjustChips(seat, amount);
-                Notify($"Added {amount:N0} to {seat.Name}. Collect {amount:N0} gil from them.", () => Table.AdjustChips(seat, -amount),
+                plugin.ExpectGil(seat, amount);
+                Notify($"Added {amount:N0} to {seat.Name}. Collect {amount:N0} gil from them.",
+                       () => { plugin.ExpectGil(seat, -amount); Table.AdjustChips(seat, -amount); },
                        $"Added {amount:N0} to {seat.DisplayName}'s stack: {amount:N0} gil collected.");
             });
             ImGui.CloseCurrentPopup();
@@ -336,7 +459,9 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.AdjustChips(seat, -amount);
-                Notify($"Took {amount:N0} from {seat.Name}. Pay them {amount:N0} gil.", () => Table.AdjustChips(seat, amount),
+                plugin.ExpectGil(seat, -amount);
+                Notify($"Took {amount:N0} from {seat.Name}. Pay them {amount:N0} gil.",
+                       () => { plugin.ExpectGil(seat, amount); Table.AdjustChips(seat, amount); },
                        $"Took {amount:N0} from {seat.DisplayName}'s stack: {amount:N0} gil paid.");
             });
             ImGui.CloseCurrentPopup();
@@ -372,6 +497,7 @@ public sealed class PlayersTab
             controls.Do(() =>
             {
                 Table.RemoveSeat(seat);
+                plugin.ExpectGil(seat, -stack);
                 plugin.Chat.PrintLocal($"Cashed out {seat.DisplayName}: paid {stack:N0} gil (net {seat.Net:+#,0;-#,0;0}).");
                 plugin.Record($"Cashed out {seat.DisplayName}: {stack:N0} gil paid (bought in {seat.TotalBuyIn:N0}, net {seat.Net:+#,0;-#,0;0}).");
                 notice = $"Cashed out {seat.DisplayName} for {stack:N0}.";

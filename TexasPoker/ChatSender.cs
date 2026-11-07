@@ -22,6 +22,10 @@ public sealed class ChatSender : IDisposable
     private readonly IChatGui chatGui;
     private readonly Configuration config;
     private readonly ConcurrentQueue<string> queue = new();
+
+    // Tells whose echo in the dealer's own chat is hidden (hole cards while the dealer plays), with when they
+    // were queued. The game shows every tell you send as ">> Name: text"; this is how that line is caught.
+    private readonly ConcurrentDictionary<string, DateTime> hiddenEchoes = new();
     private DateTime nextSend = DateTime.MinValue;
 
     public ChatSender(IFramework framework, IChatGui chatGui, Configuration config)
@@ -48,6 +52,30 @@ public sealed class ChatSender : IDisposable
 
     public void Tell(string target, string message) => Enqueue($"/tell {target} {message}");
 
+    /// <summary>
+    /// A tell whose copy in your own chat is hidden: the player gets it, but the ">> Name: ..." line you'd
+    /// normally see is dropped (see <see cref="TakeHiddenEcho"/>), and a preview doesn't print its text.
+    /// </summary>
+    public void TellHidden(string target, string message)
+    {
+        var clean = Clean(message);
+        hiddenEchoes[Key(clean)] = DateTime.UtcNow;
+        Enqueue($"/tell {target} {clean}");
+    }
+
+    /// <summary>Whether this outgoing tell's text is one queued with <see cref="TellHidden"/>; it's forgotten once seen.</summary>
+    public bool TakeHiddenEcho(string text)
+    {
+        foreach (var old in hiddenEchoes.Where(e => DateTime.UtcNow - e.Value > TimeSpan.FromMinutes(10)).Select(e => e.Key).ToList())
+            hiddenEchoes.TryRemove(old, out _);
+        return hiddenEchoes.TryRemove(Key(text), out _);
+    }
+
+    // The game may adjust spacing, so the match ignores whitespace.
+    private static string Key(string text) => new(text.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+    private static string Clean(string text) => new string(text.Where(c => !char.IsControl(c)).ToArray()).Trim();
+
     /// <summary>Queues an /echo: shown (and any &lt;se.N&gt; played) in the dealer's own chat only.</summary>
     public void Echo(string message) => Enqueue($"/echo {message}");
 
@@ -58,7 +86,7 @@ public sealed class ChatSender : IDisposable
 
     private void Enqueue(string command)
     {
-        var clean = new string(command.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        var clean = Clean(command);
         if (clean.Length > 1)
             queue.Enqueue(clean);
     }
@@ -71,6 +99,8 @@ public sealed class ChatSender : IDisposable
         nextSend = DateTime.UtcNow.AddMilliseconds(Math.Max(500, config.MessageDelayMs));
         if (config.SendToChat || command.StartsWith("/echo ", StringComparison.Ordinal))
             Send(command);
+        else if (command.StartsWith("/tell ", StringComparison.Ordinal) && TakeHiddenEcho(TellText(command)))
+            PrintLocal($"(preview) {TellTarget(command)} (hidden while you play)");
         else
             PrintLocal($"(preview) {command}");
     }
@@ -85,6 +115,11 @@ public sealed class ChatSender : IDisposable
         uiModule->ProcessChatBoxEntry(text);
         text->Dtor(true);
     }
+
+    // "/tell First Last@World text": the target is the next two words.
+    private static string TellTarget(string command) => string.Join(' ', command.Split(' ').Skip(1).Take(2));
+
+    private static string TellText(string command) => string.Join(' ', command.Split(' ').Skip(3));
 
     private static string Truncate(string line)
     {

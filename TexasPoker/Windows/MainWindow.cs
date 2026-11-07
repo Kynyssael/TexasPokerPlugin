@@ -34,6 +34,7 @@ public sealed class MainWindow : Window
     private readonly MessagesTab messagesTab;
     private readonly TableView tableView;
     private readonly PlayersTab playersTab;
+    private Seat? menuSeat;
     private readonly WebTab webTab;
     private readonly VenueTab venueTab;
     private readonly SignInPanel signInPanel;
@@ -178,6 +179,10 @@ public sealed class MainWindow : Window
 
     private void DrawTableTab()
     {
+        // Trades and the last seating change, so they're seen while dealing.
+        playersTab.DrawTrades();
+        playersTab.DrawNotice();
+
         var useTable = Config.TableView;
         if (ImGui.Checkbox("Table view", ref useTable))
         {
@@ -195,7 +200,7 @@ public sealed class MainWindow : Window
             controls.DrawHandSummary(compact: false, showBoard: false);
 
             // Leave room below the table for the action buttons.
-            var reserved = Table.HandInProgress ? 170 : 150;
+            var reserved = Table.HandInProgress ? 170 : 185;
             var height = Math.Clamp(ImGui.GetContentRegionAvail().Y - reserved, 280, 560);
             tableView.Draw(height);
         }
@@ -213,7 +218,45 @@ public sealed class MainWindow : Window
         if (Table.HandInProgress)
             controls.DrawActionPanel(compact: false);
         else
+        {
             controls.DrawBetweenHands(compact: false);
+            ImGui.Spacing();
+            playersTab.DrawSeatButtons();
+            ImGui.SameLine();
+            ImGui.TextColored(Muted, $"Buy-in {playersTab.BuyIn:N0} (set on the Players tab)");
+        }
+
+        DrawSeatMenu();
+    }
+
+    /// <summary>The Players tab's seat buttons, for the seat the dealer right-clicked on this tab.</summary>
+    private void DrawSeatMenu()
+    {
+        if (tableView.MenuRequested is { } requested)
+        {
+            menuSeat = requested;
+            tableView.MenuRequested = null;
+            ImGui.OpenPopup("##seatmenu");
+        }
+
+        if (!ImGui.BeginPopup("##seatmenu"))
+            return;
+
+        // Cashed out from the menu: nothing left to show.
+        if (menuSeat is not { } seat || !Table.Seats.Contains(seat))
+        {
+            ImGui.CloseCurrentPopup();
+            ImGui.EndPopup();
+            return;
+        }
+
+        ImGui.TextColored(Gold, seat.DisplayName);
+        ImGui.SameLine();
+        ImGui.TextColored(Muted, $"Stack {seat.Stack:N0}, net {seat.Net:+#,0;-#,0;0}");
+        ImGui.PushID(seat.DisplayName);
+        playersTab.DrawSeatActions(seat);
+        ImGui.PopID();
+        ImGui.EndPopup();
     }
 
     private void DrawSeatTable()
@@ -248,6 +291,10 @@ public sealed class MainWindow : Window
                 ImGui.TextColored(Muted, seat.DisplayName);
             else
                 ImGui.TextUnformatted(seat.DisplayName);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Right-click: rebuy, adjust, sit out, cash out");
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+                tableView.MenuRequested = seat;
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(seat.Stack.ToString("N0"));
@@ -258,7 +305,7 @@ public sealed class MainWindow : Window
             ImGui.TableNextColumn();
             if (seat.HoleCards.Count > 0 && seat.InHand)
             {
-                if (Config.ShowHoleCards || Table.Street == Street.HandOver && seat.Contending)
+                if (plugin.ShowsCards(seat))
                     DrawCards(seat.HoleCards);
                 else
                     ImGui.TextColored(Muted, "[?] [?]");
@@ -305,6 +352,11 @@ public sealed class MainWindow : Window
                 Config.DefaultBuyIn = Math.Max(0, buyIn);
                 changed = true;
             }
+
+            changed |= Checkbox("Add traded gil to the player's stack", () => Config.AutoAddTrades, v => Config.AutoAddTrades = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("When a seated player trades you gil beyond a buy-in you already entered, it goes straight onto\n" +
+                                 "their stack (after their hand, if they're in one), with Undo. Off: it waits for you to add it.");
 
             ImGui.TextUnformatted($"Hands dealt: {Table.HandNumber:N0} (next is #{Table.HandNumber + 1})");
             ImGui.SameLine();
@@ -467,7 +519,12 @@ public sealed class MainWindow : Window
         if (SettingsHeader("This window"))
         {
             changed |= Checkbox("Use suit symbols in this window", () => Config.UiSuitSymbols, v => Config.UiSuitSymbols = v);
+            // While you play, everyone else's cards stay hidden from you, whatever this says.
+            ImGui.BeginDisabled(plugin.DealerPlaying);
             changed |= Checkbox("Show all hole cards in this window", () => Config.ShowHoleCards, v => Config.ShowHoleCards = v);
+            ImGui.EndDisabled();
+            if (plugin.DealerPlaying && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Off while you're seated at your own table: you only see your own cards.");
 
             var betDistance = Config.BetDistance;
             ImGui.SetNextItemWidth(140);

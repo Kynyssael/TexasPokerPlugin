@@ -107,6 +107,9 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 2. **Settings** tab, in sections you open as needed: blinds and buy-in, rake, bomb pots and run it twice, chat and
    announcements, players' actions, and this window.
 3. **Table** tab: *Deal hand*. Pick each player's action (or let the plugin pick it from what they type in chat) and press *Confirm*. *Undo* fixes a mistake; Ctrl+click *Cancel hand* for a misdeal.
+   Right-click a seat (on the table or in the list) for *Rebuy*, *Adjust*, *Sit out* and *Cash out*, the same as on the
+   Players tab. Between hands, *Seat my target*, *Seat me* and *Seat whole party* sit under the table, and waiting
+   trades show at the top.
    *Call turn*, next to the player to act (or `/poker call`), says whose turn it is again in chat with a game sound,
    for a busy venue. Pick the sound under Settings → Chat and announcements (*Hear it* plays it to you only).
    **Turn timer** (off until you tick it under Settings → Players' actions, 15–300 s, 60 by default): at half the
@@ -117,6 +120,22 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
 4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
 5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again,
    and a new session log starts.
+
+**Trades.** The plugin notices when a trade moves gil (it reads only your own gil and who you traded with). A trade
+for something you already entered, like a buy-in, rebuy or cash-out, is just checked off: "their buy-in is collected", or "300,000
+still to pay" (a trade carries at most 1,000,000 gil, so big amounts come in parts). Any other gil from a seated player goes
+straight onto their stack as a rebuy (during their hand, as soon as the hand is over), with *Undo* if it was a tip or a
+payback; untick *Add traded gil to the player's stack* (Settings, blinds and buy-in) to add it yourself instead. Gil
+from someone not seated shows at the top of the Players and Table tabs: *Seat with* that amount, or *Ignore*. Paying more than the table said, or paying
+someone nothing is owed to, is flagged in red. Every trade goes in the session log.
+
+**Playing at your own table.** With only one player around, click *Seat me* on the Players tab (or seat yourself as
+your target). Your buy-in is your own gil, and party chat is told the dealer is playing. While you're seated, the
+plugin keeps everyone else's cards from you: *Show all hole cards* is off, your copy of each card and link tell is
+hidden from your chat (your own cards print in your chat only), and the Web tab hides the other players' links and
+PINs. You act like any player, from the Table tab or by typing in chat. It can't stop a dealer who goes out of their
+way to cheat (another chat logging plugin still sees the tells), so players are trusting you, and the chat notice
+says so.
 
 **Session log, for your records.** The **Log** tab keeps the whole session, each line with the time: everything the
 table announced, plus the gil you took and paid (buy-ins, rebuys, adjustments, cash-outs with each player's net, rake
