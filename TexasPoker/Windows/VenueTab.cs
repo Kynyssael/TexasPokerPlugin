@@ -24,6 +24,14 @@ public sealed class VenueTab
     private const int MaxLogoBytes = 256 * 1024;
     private static readonly Vector3 HouseFelt = FromHex("#1a6b3f");
     private static readonly Vector3 HouseAccent = FromHex("#f2c14e");
+    private static readonly Vector3 HouseBack = FromHex("#33478f");
+    private static readonly Vector3 HouseBack2 = FromHex("#4258a6");
+
+    private static readonly List<(string Id, string Text)> Faces = [("cream", "Cream"), ("white", "White"), ("parchment", "Parchment")];
+    private static readonly List<(string Id, string Text)> Corners = [("classic", "Classic"), ("round", "Round")];
+    private static readonly List<(string Id, string Text)> Fonts = [("standard", "Standard"), ("serif", "Classic serif"), ("typewriter", "Typewriter")];
+    private static readonly List<(string Id, string Text)> Backs =
+        [("stripes", "Two-colour stripes"), ("solid", "One plain colour"), ("logo", "Your logo on its colour"), ("image", "Your own picture")];
 
     private readonly Plugin plugin;
     private readonly FileDialogManager fileDialog = new();
@@ -38,6 +46,9 @@ public sealed class VenueTab
 
     /// <summary>Colours being picked, per venue, until they're saved.</summary>
     private readonly Dictionary<string, (Vector3 Felt, Vector3 Accent)> colours = new();
+
+    /// <summary>Card looks being picked, per venue, until they're saved.</summary>
+    private readonly Dictionary<string, CardEdit> cardEdits = new();
 
     public VenueTab(Plugin plugin)
     {
@@ -204,6 +215,8 @@ public sealed class VenueTab
         DrawLogo(venue);
         ImGui.Spacing();
         DrawColours(venue);
+        ImGui.Spacing();
+        DrawCards(venue);
         ImGui.Spacing();
         DrawPromotions(venue);
         ImGui.PopID();
@@ -412,6 +425,109 @@ public sealed class VenueTab
         ImGui.TextColored(DealerControls.Muted, "Pick a dark felt and a bright accent, so text stays readable. The website refuses colours that aren't.");
     }
 
+    private void DrawCards(OwnedVenue venue)
+    {
+        if (!venue.CardsSupported)
+            return; // an older server
+        if (!cardEdits.TryGetValue(venue.Id, out var e))
+            cardEdits[venue.Id] = e = CardEdit.From(venue.Cards);
+
+        ImGui.TextColored(DealerControls.Gold, "Cards");
+        ImGui.SameLine();
+        ImGui.TextUnformatted(venue.Cards is null ? "The Eorzean Poker cards." : "Your own, on your tables.");
+        ImGui.BeginDisabled(busy);
+        Combo("Face##cards", Faces, ref e.Face);
+        Combo("Corners##cards", Corners, ref e.Corners);
+        Combo("Font##cards", Fonts, ref e.Font);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("For the ranks (A, K, 10...). Standard is the site's own font, Classic serif looks like printed cards,\n" +
+                             "Typewriter is an old typewriter font.");
+        Combo("Back##cards", Backs, ref e.Back);
+
+        var flags = ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.DisplayHex;
+        ImGui.ColorEdit3(e.Back == "stripes" ? "##back1" : e.Back == "image" ? "Colour around the picture##back1" : "Back colour##back1",
+                         ref e.Colour1, flags);
+        if (e.Back == "stripes")
+        {
+            ImGui.SameLine();
+            ImGui.ColorEdit3("Stripe colours##back2", ref e.Colour2, flags);
+        }
+
+        if (e.Back == "logo" && venue.Logo is null)
+            ImGui.TextColored(DealerControls.Gold, "Upload a logo first (above). Until it's approved, the back shows the stripes.");
+        if (e.Back == "image")
+            DrawCardBackPicture(venue);
+
+        ImGui.BeginDisabled(e.Matches(venue.Cards));
+        if (ImGui.Button("Save cards"))
+        {
+            var body = new StringContent(JsonSerializer.Serialize(new
+            {
+                face = e.Face, corners = e.Corners, font = e.Font, back = e.Back, backColours = new[] { ToHex(e.Colour1), ToHex(e.Colour2) },
+            }), Encoding.UTF8, "application/json");
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/cards", body, "Cards saved. Open tables change straight away.");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Undo##cards"))
+            cardEdits.Remove(venue.Id);
+        ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(venue.Cards is null);
+        if (ImGui.Button("Use house cards"))
+        {
+            cardEdits.Remove(venue.Id);
+            Send(HttpMethod.Post, $"/api/venue/{venue.Id}/cards", new StringContent("null", Encoding.UTF8, "application/json"),
+                 "Back to the Eorzean Poker cards.");
+        }
+
+        ImGui.EndDisabled();
+        ImGui.EndDisabled();
+        ImGui.TextColored(DealerControls.Muted, "Only on the website: game chat can't show them. The faces keep black and red suits, so every card stays easy to read.");
+    }
+
+    private void DrawCardBackPicture(OwnedVenue venue)
+    {
+        ImGui.Indent();
+        ImGui.TextUnformatted(venue.CardBack is null ? "No picture yet." : "Your picture is on your tables.");
+        if (venue.CardBack is { } back)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("View##back"))
+                Util.OpenLink(BaseUrl + back);
+            ImGui.SameLine();
+            ImGui.BeginDisabled(busy || !ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("Remove picture"))
+                Send(HttpMethod.Delete, $"/api/venue/{venue.Id}/card-back?which=live", null, "Card back picture removed.");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click. The back shows the stripes until you upload another.");
+        }
+
+        if (venue.CardBackPending)
+        {
+            ImGui.TextColored(DealerControls.Gold, "Your new picture is waiting for Elenor's approval.");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Withdraw##back"))
+                Send(HttpMethod.Delete, $"/api/venue/{venue.Id}/card-back?which=pending", null, "Upload withdrawn.");
+        }
+
+        if (ImGui.Button(venue.CardBackPending ? "Upload a different picture..." : "Upload picture..."))
+        {
+            var id = venue.Id;
+            fileDialog.OpenFileDialog("Choose your card back", "Images{.png,.jpg,.jpeg,.webp}", (ok, file) =>
+            {
+                if (ok)
+                    UploadImage(id, file, "card-back", "Card back uploaded. It shows on your tables once Elenor approves it.");
+            });
+        }
+
+        ImGui.TextColored(DealerControls.Muted, "PNG, JPEG or WebP under 256 KB, upright (about 5 wide by 7 tall). It fills the back, " +
+                                                "so keep it simple: cards are small on phones. Elenor checks each new picture before it shows.");
+        ImGui.Unindent();
+    }
+
     private static string ToHex(Vector3 c) =>
         $"#{(int)MathF.Round(Math.Clamp(c.X, 0, 1) * 255):x2}{(int)MathF.Round(Math.Clamp(c.Y, 0, 1) * 255):x2}{(int)MathF.Round(Math.Clamp(c.Z, 0, 1) * 255):x2}";
 
@@ -461,7 +577,7 @@ public sealed class VenueTab
             fileDialog.OpenFileDialog("Choose your venue's logo", "Images{.png,.jpg,.jpeg,.webp}", (ok, file) =>
             {
                 if (ok)
-                    UploadLogo(id, file);
+                    UploadImage(id, file, "logo", "Logo uploaded. It shows on your tables once Elenor approves it.");
             });
         }
 
@@ -470,7 +586,8 @@ public sealed class VenueTab
                                                 "Elenor checks each new logo before it shows.");
     }
 
-    private void UploadLogo(string venueId, string file)
+    /// <summary>Uploads the venue's logo ("logo") or card back ("card-back"), which waits for Elenor's approval.</summary>
+    private void UploadImage(string venueId, string file, string kind, string success)
     {
         byte[] data;
         try
@@ -485,13 +602,13 @@ public sealed class VenueTab
 
         if (data.Length > MaxLogoBytes)
         {
-            ShowMessage($"That image is {data.Length / 1024} KB; the logo must be under 256 KB.", true);
+            ShowMessage($"That image is {data.Length / 1024} KB; it must be under 256 KB.", true);
             return;
         }
 
         var content = new ByteArrayContent(data);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        Send(HttpMethod.Post, $"/api/venue/{venueId}/logo", content, "Logo uploaded. It shows on your tables once Elenor approves it.");
+        Send(HttpMethod.Post, $"/api/venue/{venueId}/{kind}", content, success);
     }
 
     private void Add(OwnedVenue venue, string who)
@@ -532,6 +649,7 @@ public sealed class VenueTab
                     foreach (var venue in venues)
                     {
                         colours.Remove(venue.Id);
+                        cardEdits.Remove(venue.Id);
                         promoEdits.Remove(venue.Id);
                     }
                     if (path == "/api/venue")
@@ -596,12 +714,56 @@ public sealed class VenueTab
             ColourOf(theme, "felt"),
             ColourOf(theme, "accent"),
             v.TryGetProperty("promotions", out var promo) && promo.ValueKind == JsonValueKind.Object ? OwnerPromotions.Parse(promo) : null,
-            !v.TryGetProperty("ownerJackpot", out var ownerPlays) || ownerPlays.ValueKind != JsonValueKind.False);
+            !v.TryGetProperty("ownerJackpot", out var ownerPlays) || ownerPlays.ValueKind != JsonValueKind.False,
+            v.TryGetProperty("cards", out var cards),
+            cards.ValueKind == JsonValueKind.Object ? CardStyle.Parse(cards) : null,
+            v.TryGetProperty("cardBack", out var cardBack) && cardBack.ValueKind == JsonValueKind.String ? cardBack.GetString() : null,
+            v.TryGetProperty("cardBackPending", out var backPending) && backPending.ValueKind == JsonValueKind.True);
     }
 
     private sealed record OwnedVenue(
         string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending,
-        string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions, bool OwnerJackpot);
+        string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions, bool OwnerJackpot,
+        bool CardsSupported, CardStyle? Cards, string? CardBack, bool CardBackPending);
+
+    /// <summary>How the venue's cards look on the website, as saved.</summary>
+    private sealed record CardStyle(string Face, string Corners, string Font, string Back, Vector3 Colour1, Vector3 Colour2)
+    {
+        public static CardStyle Parse(JsonElement c)
+        {
+            var colours = c.TryGetProperty("backColours", out var list) && list.ValueKind == JsonValueKind.Array
+                ? list.EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToList()
+                : [];
+            Vector3 Colour(int i, Vector3 house) => i < colours.Count && colours[i].Length == 7 ? FromHex(colours[i]) : house;
+            string Text(string name, string house) =>
+                c.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? house : house;
+            return new CardStyle(Text("face", "cream"), Text("corners", "classic"), Text("font", "standard"), Text("back", "stripes"),
+                                 Colour(0, HouseBack), Colour(1, HouseBack2));
+        }
+    }
+
+    /// <summary>The owner's unsaved card looks.</summary>
+    private sealed class CardEdit
+    {
+        public string Face = "cream";
+        public string Corners = "classic";
+        public string Font = "standard";
+        public string Back = "stripes";
+        public Vector3 Colour1 = HouseBack;
+        public Vector3 Colour2 = HouseBack2;
+
+        public static CardEdit From(CardStyle? c) => c is null
+            ? new CardEdit()
+            : new CardEdit { Face = c.Face, Corners = c.Corners, Font = c.Font, Back = c.Back, Colour1 = c.Colour1, Colour2 = c.Colour2 };
+
+        /// <summary>Nothing to save: the same as what's saved (or the house cards, if none are).</summary>
+        public bool Matches(CardStyle? saved)
+        {
+            var s = From(saved);
+            return Face == s.Face && Corners == s.Corners && Font == s.Font && Back == s.Back &&
+                   ToHex(Colour1) == ToHex(s.Colour1) && ToHex(Colour2) == ToHex(s.Colour2);
+        }
+    }
 
     /// <summary>The venue's promotion settings as the owner sees them, with the choices for the lists.</summary>
     private sealed record OwnerPromotions(
