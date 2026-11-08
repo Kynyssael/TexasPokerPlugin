@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Dalamud.Configuration;
+using Newtonsoft.Json;
+using TexasPoker.Engine;
 
 namespace TexasPoker;
 
@@ -62,6 +64,12 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public bool AutoAddTrades { get; set; } = true;
 
+    /// <summary>
+    /// Cashing a player out also asks them to trade and types in their gil once they accept. The dealer still
+    /// checks it and presses Trade and Confirm.
+    /// </summary>
+    public bool TradeOnCashOut { get; set; } = true;
+
     /// <summary>Show players around a drawn poker table (dealer at the bottom) instead of a list.</summary>
     public bool TableView { get; set; } = true;
 
@@ -105,8 +113,54 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The version of the terms of use the dealer accepted (0 = never). See TermsPanel.Version.</summary>
     public int AcceptedTermsVersion { get; set; }
 
-    /// <summary>The table server's session key from signing in with XIVAuth. Empty when signed out.</summary>
-    public string AuthSessionKey { get; set; } = string.Empty;
+    /// <summary>
+    /// The table server's session key from signing in with XIVAuth. Empty when signed out. Only kept in memory:
+    /// it's saved encrypted for this Windows account, in <see cref="AuthKeyStored"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string AuthSessionKey
+    {
+        get => authSessionKey ??= SecretStore.Unprotect(authKeyStored);
+        set
+        {
+            authSessionKey = value;
+            authKeyStored = SecretStore.Protect(value);
+        }
+    }
+
+    /// <summary>The session key as saved, encrypted (see <see cref="SecretStore"/>).</summary>
+    public string AuthKeyStored
+    {
+        get => authKeyStored;
+        set
+        {
+            authKeyStored = value;
+            authSessionKey = null;
+        }
+    }
+
+    private string authKeyStored = string.Empty;
+    private string? authSessionKey;
+
+    /// <summary>
+    /// Versions before 0.5.1 saved the key as plain text under this name. It's read once and saved encrypted from
+    /// then on; it's never written.
+    /// </summary>
+    [JsonProperty("AuthSessionKey")]
+    private string LegacyAuthSessionKey
+    {
+        set
+        {
+            if (string.IsNullOrEmpty(value) || authKeyStored.Length > 0)
+                return;
+            AuthSessionKey = value;
+            KeyNeedsSave = true;
+        }
+    }
+
+    /// <summary>A plain-text key from an older version was read: save soon, so it's only on disk encrypted.</summary>
+    [JsonIgnore]
+    public bool KeyNeedsSave { get; private set; }
 
     public string AuthName { get; set; } = string.Empty;
 

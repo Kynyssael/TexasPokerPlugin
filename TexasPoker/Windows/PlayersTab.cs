@@ -74,6 +74,8 @@ public sealed class PlayersTab
             }
         }
 
+        DrawPayouts();
+
         var waiting = plugin.Trades.Waiting;
         if (waiting.Count == 0)
         {
@@ -122,6 +124,37 @@ public sealed class PlayersTab
                 plugin.IgnoreTrade(trade);
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Not for the table (a tip, a payback, a mistake). Trade it back yourself if needed.");
+            ImGui.PopID();
+        }
+
+        ImGui.Spacing();
+    }
+
+    /// <summary>Gil the table owes players after a cash-out or take-out, with a button to open the trade.</summary>
+    private void DrawPayouts()
+    {
+        var payouts = plugin.Trades.Payouts(DateTime.UtcNow);
+        if (payouts.Count == 0)
+            return;
+
+        ImGui.TextColored(DealerControls.Gold, "Gil to pay");
+        foreach (var (name, amount) in payouts)
+        {
+            ImGui.PushID($"pay{name}");
+            ImGui.Bullet();
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{name}: {amount:N0} gil");
+            ImGui.SameLine();
+            var part = Math.Min(amount, GilTrades.MaxPerTrade);
+            ImGui.BeginDisabled(plugin.TradeOpen);
+            if (ImGui.SmallButton(part < amount ? $"Trade {part:N0} (part)" : "Trade"))
+                controls.Do(() => plugin.TradePayout(name, amount));
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip(plugin.TradeOpen
+                    ? "A trade is open. Finish or cancel it first."
+                    : $"Asks {name} to trade (stand next to them). When they accept, {part:N0} gil is typed in.\n" +
+                      "You check it and press Trade and Confirm yourself: the plugin never does.");
             ImGui.PopID();
         }
 
@@ -491,20 +524,45 @@ public sealed class PlayersTab
                           $"Bought in {seat.TotalBuyIn:N0}, so they leave {(seat.Net >= 0 ? "up" : "down")} {Math.Abs(seat.Net):N0}");
         ImGui.Spacing();
 
-        if (DealerControls.ColoredButton("Paid - remove them", PayColor, new Vector2(180, 30)))
+        var canTrade = seat.Stack > 0 && !plugin.IsLocalPlayer(seat);
+        if (canTrade)
+        {
+            var on = plugin.Configuration.TradeOnCashOut;
+            if (ImGui.Checkbox("Open a trade with them", ref on))
+            {
+                plugin.Configuration.TradeOnCashOut = on;
+                plugin.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("On: asks them to trade and types in their gil once they accept; you press Trade and Confirm.\n" +
+                                 "Off: you trade them yourself. Remembered for next time (also in Settings).");
+            ImGui.Spacing();
+        }
+
+        var trade = plugin.Configuration.TradeOnCashOut && canTrade;
+        if (DealerControls.ColoredButton(trade ? "Remove them and trade" : "Paid - remove them", PayColor, new Vector2(180, 30)))
         {
             var stack = seat.Stack;
             controls.Do(() =>
             {
                 Table.RemoveSeat(seat);
                 plugin.ExpectGil(seat, -stack);
+                if (trade)
+                    plugin.TryTradePayout(seat.Name, stack);
                 plugin.Chat.PrintLocal($"Cashed out {seat.DisplayName}: paid {stack:N0} gil (net {seat.Net:+#,0;-#,0;0}).");
                 plugin.Record($"Cashed out {seat.DisplayName}: {stack:N0} gil paid (bought in {seat.TotalBuyIn:N0}, net {seat.Net:+#,0;-#,0;0}).");
-                notice = $"Cashed out {seat.DisplayName} for {stack:N0}.";
+                notice = trade
+                    ? $"Cashed out {seat.DisplayName} for {stack:N0}. Check the gil in the trade, then press Trade and Confirm."
+                    : $"Cashed out {seat.DisplayName} for {stack:N0}.";
                 undoNotice = null;
             });
             ImGui.CloseCurrentPopup();
         }
+
+        if (ImGui.IsItemHovered() && trade)
+            ImGui.SetTooltip($"Removes them and asks {seat.Name} to trade. When they accept, the gil is typed in:\n" +
+                             "you check it and press Trade and Confirm. They can put their own items or gil in the trade too.");
 
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(80, 30)))

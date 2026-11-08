@@ -102,6 +102,24 @@ public sealed class GilTradesTests
     }
 
     [Fact]
+    public void Payouts_list_only_gil_still_to_pay_biggest_first()
+    {
+        var trades = new GilTrades();
+        trades.Expect("Aya Ren", -300_000, T0);
+        trades.Expect("Bo Tam", -1_500_000, T0);
+        trades.Expect("Cid Nan", 500_000, T0);
+
+        Assert.Equal([("Bo Tam", 1_500_000L), ("Aya Ren", 300_000L)], trades.Payouts(T0.AddMinutes(1)));
+
+        // Paid in part, then in full.
+        trades.Settle(Trade(-1_000_000, "Bo Tam"));
+        Assert.Contains(("Bo Tam", 500_000L), trades.Payouts(T0.AddMinutes(2)));
+        trades.Settle(Trade(-500_000, "Bo Tam", minutes: 3));
+        trades.Settle(Trade(-300_000, minutes: 3));
+        Assert.Empty(trades.Payouts(T0.AddMinutes(4)));
+    }
+
+    [Fact]
     public void Old_expectations_are_forgotten()
     {
         var trades = new GilTrades();

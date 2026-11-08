@@ -31,6 +31,8 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        if (Configuration.KeyNeedsSave)
+            PluginInterface.SavePluginConfig(Configuration); // an older version's plain-text sign-in key: saved encrypted now
         Table = new Table();
         LoadTable();
 
@@ -45,7 +47,7 @@ public sealed class Plugin : IDalamudPlugin
             Configuration.WebTableKey = WebPublisher.NewId(32);
         Web = new WebPublisher(this, Framework);
         Auth = new AuthClient(this, Framework);
-        tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished);
+        tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished, OnTradeNotice);
         Table.Announced += OnAnnounced;
         Table.HoleCardsDealt += OnHoleCardsDealt;
         Table.StreetDealt += OnStreetDealt;
@@ -363,7 +365,7 @@ public sealed class Plugin : IDalamudPlugin
         PartyList.Select(m => (Name: m.Name.TextValue, World: m.World.Value.Name.ToString()))
             .Where(m => !IsLocalPlayer(m.Name, m.World));
 
-    private bool IsLocalPlayer(Seat seat) => IsLocalPlayer(seat.Name, seat.World);
+    public bool IsLocalPlayer(Seat seat) => IsLocalPlayer(seat.Name, seat.World);
 
     /// <summary>Whether this seat is you, the dealer, playing at your own table.</summary>
     public bool IsDealer(Seat seat) => IsLocalPlayer(seat);
@@ -455,6 +457,54 @@ public sealed class Plugin : IDalamudPlugin
     {
         Trades.Dismiss(trade);
         Record($"Trade from {trade.DisplayName} for {trade.Amount:N0} gil left out of the table.");
+    }
+
+    /// <summary>The trade window is open.</summary>
+    public bool TradeOpen => tradeWatcher.Trading;
+
+    /// <summary>
+    /// Asks a player the table owes gil for a trade; once they accept, the gil is typed in (up to one trade's worth)
+    /// for the dealer to check. The dealer presses Trade and Confirm: the plugin never does.
+    /// </summary>
+    public void TradePayout(string name, long owed)
+    {
+        var self = ObjectTable.LocalPlayer?.EntityId;
+        var nearby = ObjectTable.OfType<IPlayerCharacter>()
+                                .Where(p => p.EntityId != self && p.Name.TextValue.Equals(name, StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+        if (nearby.Count == 0)
+            throw new InvalidOperationException($"{name} isn't nearby. Walk up to them, then try again.");
+        if (nearby.Count > 1)
+            throw new InvalidOperationException($"More than one {name} is nearby. Trade them yourself.");
+
+        var amount = (uint)Math.Min(owed, GilTrades.MaxPerTrade);
+        tradeWatcher.Offer(nearby[0].EntityId, name, amount);
+        var rest = owed > amount ? $" The other {owed - amount:N0} goes in another trade (at most 1,000,000 per trade)." : string.Empty;
+        LastTrade = new TradeResult($"Asked {name} to trade. When they accept, {amount:N0} gil is typed in for you to check.{rest}", Warning: false);
+        AutoAddedTrade = null;
+    }
+
+    /// <summary>
+    /// <see cref="TradePayout"/> right after a cash-out: if the trade can't be opened (they walked off, a trade is
+    /// open), the cash-out still stands and the payout waits under Gil to pay.
+    /// </summary>
+    public void TryTradePayout(string name, long owed)
+    {
+        try
+        {
+            TradePayout(name, owed);
+        }
+        catch (InvalidOperationException ex)
+        {
+            OnTradeNotice($"Couldn't open the trade: {ex.Message} Use Trade under Gil to pay when you're ready.", true);
+        }
+    }
+
+    private void OnTradeNotice(string message, bool warning)
+    {
+        LastTrade = new TradeResult(message, warning);
+        AutoAddedTrade = null;
+        Chat.PrintLocal(message);
     }
 
     private void OnTradeFinished(string name, string world, long amount)

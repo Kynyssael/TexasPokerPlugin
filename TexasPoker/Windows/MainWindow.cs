@@ -353,6 +353,11 @@ public sealed class MainWindow : Window
                 changed = true;
             }
 
+            changed |= Checkbox("Open a trade when cashing out", () => Config.TradeOnCashOut, v => Config.TradeOnCashOut = v);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Cash out asks the player to trade and types in their gil once they accept.\n" +
+                                 "You check it and press Trade and Confirm yourself. Off: use Trade under Gil to pay, or trade them yourself.");
+
             changed |= Checkbox("Add traded gil to the player's stack", () => Config.AutoAddTrades, v => Config.AutoAddTrades = v);
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("When a seated player trades you gil beyond a buy-in you already entered, it goes straight onto\n" +

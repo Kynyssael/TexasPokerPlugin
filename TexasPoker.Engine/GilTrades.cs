@@ -60,6 +60,21 @@ public sealed class GilTrades
             expected[name] = (total, now);
     }
 
+    /// <summary>
+    /// The most gil one trade can carry. A bigger amount is traded in parts.
+    /// </summary>
+    public const long MaxPerTrade = 1_000_000;
+
+    /// <summary>Gil still to pay players (cash-outs and take-outs), as amounts above 0, biggest first.</summary>
+    public IReadOnlyList<(string Name, long Amount)> Payouts(DateTime now)
+    {
+        Forget(now);
+        return expected.Where(e => e.Value.Amount < 0)
+                       .Select(e => (e.Key, -e.Value.Amount))
+                       .OrderByDescending(p => p.Item2)
+                       .ToList();
+    }
+
     /// <summary>What's still expected with the player (see <see cref="Expect"/>), or 0.</summary>
     public long ExpectedWith(string name, DateTime now)
     {
