@@ -47,7 +47,8 @@ public sealed class Plugin : IDalamudPlugin
             Configuration.WebTableKey = WebPublisher.NewId(32);
         Web = new WebPublisher(this, Framework);
         Auth = new AuthClient(this, Framework);
-        tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished, OnTradeNotice);
+        tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished, OnTradeNotice,
+                                        () => mainWindow is { IsOpen: true } || dealerBarWindow is { IsOpen: true });
         Table.Announced += OnAnnounced;
         Table.HoleCardsDealt += OnHoleCardsDealt;
         Table.StreetDealt += OnStreetDealt;

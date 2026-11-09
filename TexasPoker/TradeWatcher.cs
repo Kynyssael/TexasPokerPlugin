@@ -31,6 +31,7 @@ public sealed unsafe class TradeWatcher : IDisposable
     private readonly IObjectTable objects;
     private readonly Action<string, string, long> finished;
     private readonly Action<string, bool> notice;
+    private readonly Func<bool> tracking;
 
     private bool open;
     private DateTime openedAt;
@@ -43,9 +44,14 @@ public sealed unsafe class TradeWatcher : IDisposable
 
     /// <param name="finished">Called with the partner's name, home world (may be empty) and the gil you gained (below 0: gave).</param>
     /// <param name="notice">Called with what happened to a payout offer, and whether it's a warning.</param>
+    /// <param name="tracking">
+    /// Whether to watch trades now (the poker window is open). Checked when a trade window opens, so a trade
+    /// already open counts even if the poker window closes before it's done.
+    /// </param>
     public TradeWatcher(IAddonLifecycle lifecycle, IFramework framework, IObjectTable objects, Action<string, string, long> finished,
-                        Action<string, bool> notice)
+                        Action<string, bool> notice, Func<bool> tracking)
     {
+        this.tracking = tracking;
         this.lifecycle = lifecycle;
         this.framework = framework;
         this.objects = objects;
@@ -89,6 +95,10 @@ public sealed unsafe class TradeWatcher : IDisposable
     {
         var inventory = InventoryManager.Instance();
         if (inventory == null)
+            return;
+
+        // Trades while you're not running the table are your own business: not watched, not logged.
+        if (!tracking() && offer is null)
             return;
 
         open = true;
