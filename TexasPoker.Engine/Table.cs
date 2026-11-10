@@ -217,6 +217,24 @@ public sealed class Table
         return seat;
     }
 
+    /// <summary>
+    /// Seats a player who comes from another tournament table just before the button (the button stays with its
+    /// player), so they're dealt in next hand and the blinds reach them in turn, like everyone else's.
+    /// </summary>
+    public Seat AddSeatBeforeButton(string name, string world, long stack)
+    {
+        if (HandInProgress)
+            throw new InvalidOperationException("Finish the hand first.");
+        var seat = AddSeat(name, world, stack);
+        if (ButtonIndex < 0 || ButtonIndex >= seats.Count - 1)
+            return seat;
+
+        seats.RemoveAt(seats.Count - 1);
+        seats.Insert(ButtonIndex, seat);
+        ButtonIndex++;
+        return seat;
+    }
+
     /// <summary>Restores a seat from saved data without counting a new buy-in.</summary>
     public Seat RestoreSeat(string name, string world, long stack, long totalBuyIn, bool sittingOut)
     {

@@ -555,6 +555,9 @@ public sealed class Plugin : IDalamudPlugin
         Record($"Trade: {result.Message}");
     }
 
+    /// <summary>Tells a tournament player by /tell which table they move to.</summary>
+    public void TellTournamentMove(Seat seat, string message) => TellPlayer(seat, message);
+
     /// <summary>Tells the table the dealer has sat down to play, so nobody is surprised by it.</summary>
     public void AnnounceDealerPlaying(Seat seat)
     {

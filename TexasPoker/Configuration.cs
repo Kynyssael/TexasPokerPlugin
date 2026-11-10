@@ -208,6 +208,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public string TournamentId { get; set; } = string.Empty;
 
+    /// <summary>The last tournament table news line announced in chat, so none is said twice (after a reload too).</summary>
+    public int TournamentFeedSeq { get; set; }
+
     public int ButtonIndex { get; set; } = -1;
 
     public int HandNumber { get; set; }

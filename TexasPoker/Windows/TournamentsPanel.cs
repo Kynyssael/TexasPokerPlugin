@@ -24,7 +24,11 @@ public sealed class TournamentsPanel
     private readonly Plugin plugin;
     private readonly Dictionary<string, Section> sections = new();
     private readonly Dictionary<string, string> registerText = new();
-    private readonly Dictionary<string, int> dealerPick = new();
+    /// <summary>The dealer picked for each table at the start, by tournament.</summary>
+    private readonly Dictionary<string, List<int>> dealerPicks = new();
+
+    /// <summary>The dealer picked to take over a table, by tournament and table.</summary>
+    private readonly Dictionary<string, int> handover = new();
     private Draft? editing;
     private string editingVenue = string.Empty;
     private bool busy;
@@ -50,9 +54,10 @@ public sealed class TournamentsPanel
         if (due && !busy)
             Load(venueId);
 
-        ImGui.TextWrapped("One table of up to 7 players for now. Register the players at the start of the event, once each has " +
-                          "traded you the entry fee. Start closes registration: the server draws the seats, and the dealer you pick " +
-                          "seats them. You pay the prizes at the end.");
+        ImGui.TextWrapped("Up to 8 tables of 7 players. Register the players at the start of the event, once each has traded you " +
+                          "the entry fee. Start closes registration: the server draws the tables and seats, and each table's dealer " +
+                          "seats their players. The server moves players to keep the tables even, breaks tables as players go out, " +
+                          "and runs hand-for-hand on the bubble. You pay the prizes at the end.");
         ImGui.BeginDisabled(busy);
         if (ImGui.SmallButton("Refresh##tour"))
             Load(venueId);
@@ -202,43 +207,54 @@ public sealed class TournamentsPanel
         ImGui.TextColored(DealerControls.Muted, "Register each player once they've traded you the entry fee.");
 
         ImGui.Spacing();
-        var pick = Math.Clamp(dealerPick.GetValueOrDefault(t.Id), 0, Math.Max(0, section.Dealers.Count - 1));
-        ImGui.SetNextItemWidth(240);
-        if (ImGui.BeginCombo("Dealer##dealer", section.Dealers.Count > 0 ? section.Dealers[pick].Label : "(none)"))
+        var tables = Math.Max(1, t.TablesNeeded);
+        ImGui.TextUnformatted(tables == 1 ? "Dealer" : $"{tables} tables: a dealer for each");
+        if (!dealerPicks.TryGetValue(t.Id, out var picks))
+            dealerPicks[t.Id] = picks = [];
+        while (picks.Count < tables)
+            picks.Add(Math.Min(picks.Count, Math.Max(0, section.Dealers.Count - 1)));
+        for (var n = 0; n < tables; n++)
         {
-            for (var i = 0; i < section.Dealers.Count; i++)
+            var pick = Math.Clamp(picks[n], 0, Math.Max(0, section.Dealers.Count - 1));
+            ImGui.SetNextItemWidth(240);
+            if (ImGui.BeginCombo($"Table {n + 1}##dealer{n}", section.Dealers.Count > 0 ? section.Dealers[pick].Label : "(none)"))
             {
-                if (ImGui.Selectable(section.Dealers[i].Label, i == pick))
-                    dealerPick[t.Id] = i;
-            }
+                for (var i = 0; i < section.Dealers.Count; i++)
+                {
+                    if (ImGui.Selectable(section.Dealers[i].Label, i == pick))
+                        picks[n] = i;
+                }
 
-            ImGui.EndCombo();
+                ImGui.EndCombo();
+            }
         }
 
-        ImGui.SameLine();
-        ImGui.BeginDisabled(busy || t.Entries.Count < 2 || section.Dealers.Count == 0 || !ImGui.GetIO().KeyCtrl);
+        var chosen = picks.Take(tables).Select(i => Math.Clamp(i, 0, Math.Max(0, section.Dealers.Count - 1))).ToList();
+        var distinct = chosen.Distinct().Count() == tables;
+        var enough = section.Dealers.Count >= tables;
+        ImGui.BeginDisabled(busy || t.Entries.Count < 2 || !enough || !distinct || !ImGui.GetIO().KeyCtrl);
         if (DealerControls.ColoredButton("Start", new Vector4(0.16f, 0.45f, 0.22f, 1f), new Vector2(90, 0)))
         {
-            var body = JsonContent(new { dealer = section.Dealers[pick].Key });
+            var body = JsonContent(new { dealers = chosen.Select(i => section.Dealers[i].Key).ToArray() });
             Send(venueId, HttpMethod.Post, $"{path}/start", body,
-                 $"Started {t.Name}. {section.Dealers[pick].Label} sees the drawn players on their Table tab (with the web table on).");
+                 $"Started {t.Name}. Each dealer sees their players on their Table tab (with the web table on).");
         }
 
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(t.Entries.Count < 2
-                ? "Register at least 2 players first."
-                : "Hold Ctrl and click. Registration closes for good, and the server draws the seats.\n" +
-                  "The dealer seats the players from their Table tab; the clock starts then.");
+            ImGui.SetTooltip(t.Entries.Count < 2 ? "Register at least 2 players first."
+                : !enough ? $"{tables} tables need {tables} dealers: add dealers to your venue first."
+                : !distinct ? "Each table needs its own dealer."
+                : "Hold Ctrl and click. Registration closes for good, and the server draws the tables and seats.\n" +
+                  "Each dealer seats their players from their Table tab; the clock starts once every table is seated.");
     }
 
     private void DrawRunning(string venueId, TournamentView t, string path)
     {
         var (index, left, paused, started) = TournamentClient.Advance(t.Levels, t.Clock, t.Received, DateTime.UtcNow);
-        ImGui.TextUnformatted($"Dealt by {t.DealerName}.");
-        ImGui.SameLine();
-        if (!t.Seated)
-            ImGui.TextColored(DealerControls.Gold, "Waiting for the dealer to seat the players.");
+        var unseated = t.Tables.Count(x => !x.Seated && !x.Broken);
+        if (unseated > 0 && !started)
+            ImGui.TextColored(DealerControls.Gold, $"Waiting for {unseated} table{(unseated == 1 ? string.Empty : "s")} to seat their players.");
         else if (!started)
             ImGui.TextColored(DealerControls.Muted, "The clock hasn't started.");
         else
@@ -275,9 +291,18 @@ public sealed class TournamentsPanel
             ImGui.SetTooltip("Hold Ctrl and click. The players leave the table; you refund the entry fees.");
         ImGui.EndDisabled();
 
-        if (ImGui.BeginTable("##standings", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        DrawHandForHand(venueId, t, path);
+        DrawTables(venueId, t, path);
+
+        foreach (var m in t.Moves)
+            ImGui.TextColored(DealerControls.Gold, m.Kind == "send"
+                ? $"Moving: {m.Player}, table {m.From} to table {m.To} (waiting for table {m.From} to send them)"
+                : $"Moving: {m.Player}, table {m.From} to table {m.To} (on their way)");
+
+        if (ImGui.BeginTable("##standings", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
         {
             ImGui.TableSetupColumn("Player");
+            ImGui.TableSetupColumn("Table", ImGuiTableColumnFlags.WidthFixed, 60);
             ImGui.TableSetupColumn("Chips", ImGuiTableColumnFlags.WidthFixed, 110);
             ImGui.TableSetupColumn("Place", ImGuiTableColumnFlags.WidthFixed, 90);
             ImGui.TableHeadersRow();
@@ -287,6 +312,8 @@ public sealed class TournamentsPanel
                 ImGui.TableNextColumn();
                 ImGui.TextColored(e.Place is null ? new Vector4(1, 1, 1, 1) : DealerControls.Muted, $"{e.Name}@{e.World}");
                 ImGui.TableNextColumn();
+                ImGui.TextColored(DealerControls.Muted, e.Place is not null ? string.Empty : e.Moving ? "moving" : e.Table is { } no ? $"{no}" : string.Empty);
+                ImGui.TableNextColumn();
                 ImGui.TextUnformatted(e.Place is null ? e.Chips.ToString("N0") : string.Empty);
                 ImGui.TableNextColumn();
                 ImGui.TextColored(DealerControls.Muted, e.Place is { } place ? $"out, {Json.Ordinal(place)}" : string.Empty);
@@ -294,6 +321,89 @@ public sealed class TournamentsPanel
 
             ImGui.EndTable();
         }
+    }
+
+    /// <summary>Hand-for-hand: on the bubble by itself, or as the owner says.</summary>
+    private void DrawHandForHand(string venueId, TournamentView t, string path)
+    {
+        ImGui.TextUnformatted("Hand-for-hand:");
+        ImGui.SameLine();
+        ImGui.TextColored(t.HandForHand ? DealerControls.Gold : DealerControls.Muted, t.HandForHand ? "on" : "off");
+        ImGui.SameLine();
+        var mode = t.HandForHandSet switch { true => 1, false => 2, _ => 0 };
+        ImGui.BeginDisabled(busy);
+        string[] labels = ["On the bubble", "On now", "Off"];
+        for (var i = 0; i < labels.Length; i++)
+        {
+            ImGui.SameLine();
+            if (ImGui.RadioButton($"{labels[i]}##h4h", mode == i) && mode != i)
+            {
+                bool? on = i switch { 1 => true, 2 => false, _ => null };
+                Send(venueId, HttpMethod.Post, $"{path}/hand-for-hand", JsonContent(new { on }),
+                     i switch { 1 => "Hand-for-hand is on: every table deals one hand, then waits for the others.", 2 => "Hand-for-hand is off.", _ => "Hand-for-hand starts by itself on the bubble." });
+            }
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("On the bubble: it starts by itself when the next player out wins nothing, and stops once the rest are in the money.");
+    }
+
+    /// <summary>Each table: its dealer and players, and a way to give it to another dealer if its dealer can't go on.</summary>
+    private void DrawTables(string venueId, TournamentView t, string path)
+    {
+        if (t.Tables.Count == 0 || !ImGui.BeginTable("##tables", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            return;
+        ImGui.TableSetupColumn("Table", ImGuiTableColumnFlags.WidthFixed, 50);
+        ImGui.TableSetupColumn("Dealer");
+        ImGui.TableSetupColumn("Players", ImGuiTableColumnFlags.WidthFixed, 190);
+        ImGui.TableSetupColumn("##give", ImGuiTableColumnFlags.WidthFixed, 300);
+        ImGui.TableHeadersRow();
+        var section = sections.GetValueOrDefault(venueId);
+        foreach (var x in t.Tables)
+        {
+            ImGui.PushID(x.No);
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted($"{x.No}");
+            ImGui.TableNextColumn();
+            ImGui.TextColored(x.Broken ? DealerControls.Muted : new Vector4(1, 1, 1, 1), x.DealerName);
+            ImGui.TableNextColumn();
+            ImGui.TextColored(x.Broken ? DealerControls.Muted : x.Waiting ? DealerControls.Gold : new Vector4(1, 1, 1, 1),
+                              x.Broken ? "closed" : !x.Seated ? $"{x.Players}, not seated yet" : x.Breaking ? $"{x.Players}, breaking up"
+                              : x.Waiting ? $"{x.Players}, waiting (hand-for-hand)" : $"{x.Players}");
+            ImGui.TableNextColumn();
+            if (!x.Broken && section is { Dealers.Count: > 0 })
+            {
+                var key = $"{t.Id}/{x.No}";
+                var pick = Math.Clamp(handover.GetValueOrDefault(key), 0, section.Dealers.Count - 1);
+                ImGui.SetNextItemWidth(180);
+                if (ImGui.BeginCombo("##to", section.Dealers[pick].Label))
+                {
+                    for (var i = 0; i < section.Dealers.Count; i++)
+                    {
+                        if (ImGui.Selectable(section.Dealers[i].Label, i == pick))
+                            handover[key] = i;
+                    }
+
+                    ImGui.EndCombo();
+                }
+
+                ImGui.SameLine();
+                ImGui.BeginDisabled(busy || !ImGui.GetIO().KeyCtrl || section.Dealers[pick].Label.StartsWith(x.DealerName, StringComparison.OrdinalIgnoreCase));
+                if (ImGui.SmallButton("Give table"))
+                    Send(venueId, HttpMethod.Post, $"{path}/table", JsonContent(new { no = x.No, dealer = section.Dealers[pick].Key }),
+                         $"Table {x.No} goes to {section.Dealers[pick].Label}: they seat its players from their Table tab.");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Hold Ctrl and click: for a dealer who can't come back. The new dealer seats the table's players\n" +
+                                     "with the chips from its last hand reported; the old dealer's plugin lets the table go.");
+            }
+
+            ImGui.PopID();
+        }
+
+        ImGui.EndTable();
     }
 
     private void DrawResults(string venueId, TournamentView t, string path)
@@ -628,6 +738,8 @@ public sealed class TournamentsPanel
         }
     }
 
+    private static bool True(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+
     private static int[] Ints(JsonElement e, string name) =>
         e.TryGetProperty(name, out var list) && list.ValueKind == JsonValueKind.Array
             ? list.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number).Select(x => (int)x.GetDouble()).ToArray()
@@ -635,21 +747,35 @@ public sealed class TournamentsPanel
 
     private sealed record Preset(string Name, long Chips, List<TournamentLevel> Levels);
 
-    private sealed record Entry(string Key, string Name, string World, long Chips, int? Place);
+    private sealed record Entry(string Key, string Name, string World, long Chips, int? Place, int? Table, bool Moving);
+
+    private sealed record TableView(int No, string DealerName, bool Seated, bool Broken, bool Breaking, int Players, bool Waiting);
+
+    private sealed record MoveView(string Player, string Kind, int From, int To);
 
     private sealed record Result(string Key, string Name, string World, int Place, long Prize, double Points, bool Paid);
 
     private sealed record TournamentView(
         string Id, string Name, string Status, long Fee, long? Pool, long PoolNow, long Chips, List<TournamentLevel> Levels,
-        int[] Prizes, int[] Points, string DealerName, bool Seated, List<Entry> Entries, int PlayersLeft, TournamentClock? Clock,
-        List<Result> Results, List<string> Events, DateTime Received)
+        int[] Prizes, int[] Points, int TablesNeeded, List<TableView> Tables, List<MoveView> Moves, bool HandForHand, bool? HandForHandSet,
+        List<Entry> Entries, int PlayersLeft, TournamentClock? Clock, List<Result> Results, List<string> Events, DateTime Received)
     {
         public static TournamentView Parse(JsonElement t, DateTime now)
         {
             var entries = t.TryGetProperty("entries", out var es) && es.ValueKind == JsonValueKind.Array
                 ? es.EnumerateArray().Select(e => new Entry(Json.Str(e, "key"), Json.Str(e, "name"), Json.Str(e, "world"), Json.Long(e, "chips"),
-                                                            e.TryGetProperty("place", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null)).ToList()
+                                                            e.TryGetProperty("place", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null,
+                                                            e.TryGetProperty("table", out var tb) && tb.ValueKind == JsonValueKind.Number ? tb.GetInt32() : null,
+                                                            True(e, "moving"))).ToList()
                 : [];
+            var tables = t.TryGetProperty("tables", out var ts) && ts.ValueKind == JsonValueKind.Array
+                ? ts.EnumerateArray().Select(x => new TableView((int)Json.Long(x, "no"), Json.Str(x, "dealerName"), True(x, "seated"), True(x, "broken"),
+                                                                True(x, "breaking"), (int)Json.Long(x, "players"), True(x, "waiting"))).ToList()
+                : [];
+            var moves = t.TryGetProperty("moves", out var ms) && ms.ValueKind == JsonValueKind.Array
+                ? ms.EnumerateArray().Select(m => new MoveView(Json.Str(m, "player"), Json.Str(m, "kind"), (int)Json.Long(m, "from"), (int)Json.Long(m, "to"))).ToList()
+                : [];
+            bool? set = t.TryGetProperty("handForHandSet", out var hs) ? hs.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => null } : null;
             var results = t.TryGetProperty("results", out var rs) && rs.ValueKind == JsonValueKind.Array
                 ? rs.EnumerateArray().Select(r => new Result(Json.Str(r, "key"), Json.Str(r, "name"), Json.Str(r, "world"), (int)Json.Long(r, "place"),
                                                              Json.Long(r, "prize"),
@@ -668,8 +794,7 @@ public sealed class TournamentsPanel
                 t.TryGetProperty("pool", out var pool) && pool.ValueKind == JsonValueKind.Number ? pool.GetInt64() : null,
                 Json.Long(t, "poolNow"), Json.Long(t, "chips"),
                 t.TryGetProperty("levels", out var levels) ? TournamentLevel.ParseAll(levels) : [],
-                Ints(t, "prizes"), Ints(t, "points"), Json.Str(t, "dealerName"),
-                t.TryGetProperty("seated", out var seated) && seated.ValueKind == JsonValueKind.True,
+                Ints(t, "prizes"), Ints(t, "points"), (int)Json.Long(t, "tablesNeeded"), tables, moves, True(t, "handForHand"), set,
                 entries, (int)Json.Long(t, "playersLeft"),
                 t.TryGetProperty("clock", out var clock) ? TournamentClock.Parse(clock) : null,
                 results, events, now);

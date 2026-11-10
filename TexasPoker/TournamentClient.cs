@@ -37,27 +37,65 @@ public sealed record TournamentClock(bool Started, int Index, double Left, bool 
 /// <summary>A finishing place, prize in gil.</summary>
 public sealed record TournamentPlace(string Name, string World, int Place, long Prize);
 
+/// <summary>A player as an instruction names them, with chips when they come with some.</summary>
+public sealed record TournamentPlayer(string Name, string World, long Chips);
+
+/// <summary>
+/// Something the server asks this table's dealer to do: "seat" the drawn players, "send" one to another table, or
+/// "receive" one coming from another table.
+/// </summary>
+public sealed record TournamentInstruction(
+    int Id, string Kind, List<TournamentPlayer> Players, int Button, TournamentPlayer? Player, long Chips, int To, string ToDealer, int From,
+    string FromDealer)
+{
+    public static TournamentInstruction Parse(JsonElement i)
+    {
+        static TournamentPlayer P(JsonElement p) => new(Json.Str(p, "name"), Json.Str(p, "world"), Json.Long(p, "chips"));
+        return new TournamentInstruction(
+            (int)Json.Long(i, "id"), Json.Str(i, "kind"),
+            i.TryGetProperty("players", out var ps) && ps.ValueKind == JsonValueKind.Array ? ps.EnumerateArray().Select(P).ToList() : [],
+            (int)Json.Long(i, "button"),
+            i.TryGetProperty("player", out var p) && p.ValueKind == JsonValueKind.Object ? P(p) : null,
+            Json.Long(i, "chips"), (int)Json.Long(i, "to"), Json.Str(i, "toDealer"), (int)Json.Long(i, "from"), Json.Str(i, "fromDealer"));
+    }
+}
+
 /// <summary>The tournament this table deals, as the server last described it.</summary>
 public sealed record TournamentInfo(
-    string Id, string Name, string Status, long Chips, bool Seated, List<(string Name, string World)>? Seating, int Button,
-    List<TournamentLevel> Levels, TournamentClock? Clock, int PlayersLeft, int Entries, List<TournamentPlace> Results)
+    string Id, string Name, string Status, long Chips, int TableNo, int Tables, bool Seated, List<TournamentLevel> Levels,
+    TournamentClock? Clock, int PlayersLeft, int Entries, bool MayDeal, bool HandForHand, List<TournamentInstruction> Instructions,
+    List<(int Seq, string Text)> Feed, int ExpectedHand, List<TournamentPlayer> Expected, List<TournamentPlace> Results, string Reason)
 {
     public static TournamentInfo? Parse(JsonElement t)
     {
         if (t.ValueKind != JsonValueKind.Object)
             return null;
-        List<(string, string)>? seating = null;
-        if (t.TryGetProperty("seating", out var s) && s.ValueKind == JsonValueKind.Array)
-            seating = s.EnumerateArray().Select(x => (Json.Str(x, "name"), Json.Str(x, "world"))).ToList();
+        static bool True(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
         var results = t.TryGetProperty("results", out var r) && r.ValueKind == JsonValueKind.Array
             ? r.EnumerateArray().Select(x => new TournamentPlace(Json.Str(x, "name"), Json.Str(x, "world"), (int)Json.Long(x, "place"), Json.Long(x, "prize"))).ToList()
             : [];
+        var instructions = t.TryGetProperty("instructions", out var ins) && ins.ValueKind == JsonValueKind.Array
+            ? ins.EnumerateArray().Select(TournamentInstruction.Parse).ToList()
+            : [];
+        var feed = t.TryGetProperty("feed", out var f) && f.ValueKind == JsonValueKind.Array
+            ? f.EnumerateArray().Select(x => ((int)Json.Long(x, "seq"), Json.Str(x, "text"))).ToList()
+            : [];
+        var expectedHand = 0;
+        var expected = new List<TournamentPlayer>();
+        if (t.TryGetProperty("expected", out var ex) && ex.ValueKind == JsonValueKind.Object)
+        {
+            expectedHand = (int)Json.Long(ex, "hand");
+            if (ex.TryGetProperty("players", out var eps) && eps.ValueKind == JsonValueKind.Array)
+                expected = eps.EnumerateArray().Select(x => new TournamentPlayer(Json.Str(x, "name"), Json.Str(x, "world"), Json.Long(x, "chips"))).ToList();
+        }
+
         return new TournamentInfo(
-            Json.Str(t, "id"), Json.Str(t, "name"), Json.Str(t, "status"), Json.Long(t, "chips"),
-            t.TryGetProperty("seated", out var seated) && seated.ValueKind == JsonValueKind.True, seating, (int)Json.Long(t, "button"),
+            Json.Str(t, "id"), Json.Str(t, "name"), Json.Str(t, "status"), Json.Long(t, "chips"), (int)Json.Long(t, "table"),
+            (int)Json.Long(t, "tables"), True(t, "seated"),
             t.TryGetProperty("levels", out var levels) ? TournamentLevel.ParseAll(levels) : [],
             t.TryGetProperty("clock", out var clock) ? TournamentClock.Parse(clock) : null,
-            (int)Json.Long(t, "playersLeft"), (int)Json.Long(t, "entries"), results);
+            (int)Json.Long(t, "playersLeft"), (int)Json.Long(t, "entries"), True(t, "mayDeal"), True(t, "handForHand"),
+            instructions, feed, expectedHand, expected, results, Json.Str(t, "reason"));
     }
 }
 
@@ -77,8 +115,9 @@ public static class Json
 
 /// <summary>
 /// Runs this table for a tournament (the Tournament License). The server keeps the clock and the field; this seats the
-/// drawn players, sets the blinds and ante of the level before each hand, calls the levels in chat, reports each hand's
-/// stacks and busts, announces each player out with their place, and ends the tournament at the table.
+/// drawn players, sets the blinds and ante of the level before each hand, calls the levels in chat, sends players to
+/// other tables and seats the ones who arrive, waits for the other tables in hand-for-hand, reports each hand's stacks
+/// and busts, announces the table's news (who's out, in what place), and ends the tournament at the table.
 /// Everything reaches the server through the web table, so it must be on.
 /// </summary>
 public sealed class TournamentClient : IDisposable
@@ -95,7 +134,8 @@ public sealed class TournamentClient : IDisposable
     private DateTime nextReportTry = DateTime.MinValue;
     private int announcedIndex = -1;
     private int warnedIndex = -1;
-    private DateTime nextSeatedRetry = DateTime.MinValue;
+    private int posting;
+    private DateTime nextSeatRetry = DateTime.MinValue;
 
     public TournamentClient(Plugin plugin, IFramework framework)
     {
@@ -113,8 +153,21 @@ public sealed class TournamentClient : IDisposable
     /// <summary>The players at the table are a tournament's: chips, not gil.</summary>
     public bool Active => Config.TournamentId.Length > 0;
 
-    /// <summary>A tournament was started for this table, and its players are waiting to be seated.</summary>
-    public bool WaitingToSeat => !Active && Current is { Status: "running", Seated: false, Seating: not null };
+    /// <summary>A tournament was started (or a table given to you), and its players are waiting to be seated.</summary>
+    public TournamentInstruction? SeatingWaiting =>
+        !Active && Current is { Status: "running" } t ? t.Instructions.FirstOrDefault(i => i.Kind == "seat") : null;
+
+    /// <summary>What this table's dealer is asked to do now (send or seat a player), if anything.</summary>
+    public TournamentInstruction? NextMove =>
+        Active && Current is { Status: "running" } t && t.Id == Config.TournamentId
+            ? t.Instructions.FirstOrDefault(i => i.Kind is "send" or "receive")
+            : null;
+
+    /// <summary>
+    /// Between hands, the players and chips here that differ from the server's after the same hand (a crash, a reload,
+    /// a mistake), or null when they agree.
+    /// </summary>
+    public string? Mismatch { get; private set; }
 
     /// <summary>The last thing to tell the dealer about the tournament (a refused report, a warning).</summary>
     public string? Notice { get; set; }
@@ -153,23 +206,35 @@ public sealed class TournamentClient : IDisposable
         received = DateTime.UtcNow;
         if (info is null || !Active || info.Id != Config.TournamentId)
             return;
-        if (info.Status is "finished" or "cancelled")
+        AnnounceFeed(info);
+        if (info.Status is "finished" or "cancelled" or "released")
         {
             End(info);
             return;
         }
 
-        // Seated here, but the server didn't hear it (it was offline): tell it again, so the clock starts.
-        if (info is { Status: "running", Seated: false } && DateTime.UtcNow >= nextSeatedRetry)
+        // Seated here, but the server didn't hear it (it was offline): tell it again, so the clock can start.
+        if (info.Instructions.FirstOrDefault(i => i.Kind == "seat") is { } seat && DateTime.UtcNow >= nextSeatRetry && posting == 0)
         {
-            nextSeatedRetry = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-            Post("seated", JsonSerializer.Serialize(new { t = info.Id }), answer =>
-            {
-                using var doc = JsonDocument.Parse(answer);
-                if (doc.RootElement.TryGetProperty("tournament", out var view))
-                    Apply(TournamentInfo.Parse(view));
-            });
+            nextSeatRetry = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            Done(seat, 0);
         }
+    }
+
+    /// <summary>The table chat news from the server (who's out, hand-for-hand, a table breaking), each line once.</summary>
+    private void AnnounceFeed(TournamentInfo info)
+    {
+        var news = info.Feed.Where(f => f.Seq > Config.TournamentFeedSeq).OrderBy(f => f.Seq).ToList();
+        if (news.Count == 0)
+            return;
+        Config.TournamentFeedSeq = news[^1].Seq;
+        var lines = news.Select(f => f.Text).Where(x => x.Length > 0).ToList();
+        if (info.Status == "running" && lines.Any(l => l.Contains(" is out in ")))
+            lines.Add($"{info.PlayersLeft} players left.");
+        plugin.Chat.SayToTable(lines);
+        foreach (var line in lines)
+            plugin.Record(line);
+        plugin.Save();
     }
 
     // ---- the clock -----------------------------------------------------------------------------
@@ -222,9 +287,13 @@ public sealed class TournamentClient : IDisposable
     {
         if (Current is not { Status: "running" } t || t.Id != Config.TournamentId)
             throw new InvalidOperationException("Waiting for the tournament server. Is the web table on (Web tab)?");
+        if (t.Instructions.FirstOrDefault(i => i.Kind == "send") is { Player: { } mover } send)
+            throw new InvalidOperationException($"Send {mover.Name} to table {send.To} first (top of the Table tab).");
+        if (!t.MayDeal)
+            throw new InvalidOperationException("Hand-for-hand: wait until every other table has finished its hand.");
         var (index, left, paused, started) = LevelNow(DateTime.UtcNow);
         if (!started)
-            throw new InvalidOperationException("The tournament clock hasn't started yet.");
+            throw new InvalidOperationException("The tournament clock hasn't started yet: it starts once every table is seated.");
         if (paused)
             throw new InvalidOperationException("The tournament clock is paused. The owner resumes it.");
         if (t.Levels[index].IsBreak)
@@ -236,13 +305,14 @@ public sealed class TournamentClient : IDisposable
         Table.TournamentMode = true;
     }
 
-    // ---- seating ---------------------------------------------------------------------------------
+    // ---- instructions ----------------------------------------------------------------------------
 
-    /// <summary>Seats the players the server drew, in its order and with its button, and tells the server.</summary>
+    /// <summary>Seats the players the server drew (or the players of a table given to you), in its order and with its button.</summary>
     public void SeatPlayers()
     {
-        if (Current is not { Status: "running", Seating: { } drawn } t)
+        if (Current is not { Status: "running" } t || SeatingWaiting is not { } seat)
             throw new InvalidOperationException("No tournament is waiting for this table.");
+        var drawn = seat.Players;
         if (Table.HandInProgress)
             throw new InvalidOperationException("Finish the hand first.");
         if (Table.Seats.Count > 0)
@@ -252,28 +322,111 @@ public sealed class TournamentClient : IDisposable
         if (drawn.Any(p => plugin.IsLocalCharacter(p.Name, p.World)))
             throw new InvalidOperationException("You're registered to play, and dealers don't play at their own table. Ask the owner.");
 
-        foreach (var (name, world) in drawn)
-            Table.AddSeat(name, world, t.Chips);
-        Table.ButtonIndex = Math.Clamp(t.Button, 0, drawn.Count - 1) - 1; // the next hand's button moves on to the drawn seat
+        foreach (var p in drawn)
+            Table.AddSeat(p.Name, p.World, p.Chips > 0 ? p.Chips : t.Chips);
+        Table.ButtonIndex = Math.Clamp(seat.Button, 0, drawn.Count - 1) - 1; // the next hand's button moves on to the drawn seat
         Table.TournamentMode = true;
         Table.Ante = 0;
         Config.TournamentId = t.Id;
+        Config.TournamentFeedSeq = t.Feed.Count > 0 ? t.Feed.Max(f => f.Seq) : 0;
         lastReportedHand = Table.HandNumber;
         announcedIndex = -1;
         warnedIndex = -1;
 
+        var where = t.Tables > 1 ? $"Table {t.TableNo} of {t.Tables}. " : string.Empty;
         plugin.Chat.SayToTable([
-            $"Tournament: {t.Name}. {drawn.Count} players, {t.Chips:N0} chips each. No rebuys.",
+            $"Tournament: {t.Name}. {where}{t.Entries} players, {t.Chips:N0} chips each. No rebuys.",
             $"Seats: {string.Join(", ", drawn.Select((p, i) => $"{i + 1}. {p.Name}"))}",
         ]);
-        plugin.Record($"=== Tournament {t.Name}: seated {string.Join(", ", drawn.Select(p => $"{p.Name}@{p.World}"))} with {t.Chips:N0} chips each ===");
+        plugin.Record($"=== Tournament {t.Name}, table {t.TableNo}: seated {string.Join(", ", drawn.Select(p => $"{p.Name}@{p.World} ({p.Chips:N0})"))} ===");
         plugin.Save();
-        Post("seated", JsonSerializer.Serialize(new { t = t.Id }), answer =>
+        Done(seat, 0);
+    }
+
+    /// <summary>The next move: sends the player to their new table, or seats the one who arrived.</summary>
+    public void DoMove()
+    {
+        if (NextMove is not { Player: { } who } move)
+            throw new InvalidOperationException("Nothing to do.");
+        if (Table.HandInProgress)
+            throw new InvalidOperationException("Finish the hand first: players move between hands.");
+
+        if (move.Kind == "send")
         {
-            using var doc = JsonDocument.Parse(answer);
-            if (doc.RootElement.TryGetProperty("tournament", out var view))
-                Apply(TournamentInfo.Parse(view));
-        });
+            var seat = Table.Seats.FirstOrDefault(s => s.Name.Equals(who.Name, StringComparison.OrdinalIgnoreCase) &&
+                                                       s.World.Equals(who.World, StringComparison.OrdinalIgnoreCase));
+            var chips = seat?.Stack ?? 0;
+            if (seat is not null)
+            {
+                Table.RemoveSeat(seat);
+                plugin.TellTournamentMove(seat, $"You move to table {move.To}: go to {move.ToDealer}'s table, with your {chips:N0} chips.");
+            }
+
+            plugin.Chat.SayToTable([$"{who.Name} moves to table {move.To} ({move.ToDealer})."]);
+            plugin.Record($"Tournament: sent {who.Name}@{who.World} to table {move.To} with {chips:N0} chips.");
+            plugin.Save();
+            Done(move, chips);
+            return;
+        }
+
+        // Already seated (the server didn't hear it the first time): just say so again.
+        if (Table.Seats.Any(s => s.Name.Equals(who.Name, StringComparison.OrdinalIgnoreCase) && s.World.Equals(who.World, StringComparison.OrdinalIgnoreCase)))
+        {
+            Done(move, move.Chips);
+            return;
+        }
+
+        var arrived = Table.AddSeatBeforeButton(who.Name, who.World, move.Chips);
+        plugin.Chat.SayToTable([$"Welcome {arrived.Name}, from table {move.From}, with {move.Chips:N0} chips."]);
+        plugin.Record($"Tournament: seated {arrived.DisplayName} from table {move.From} with {move.Chips:N0} chips.");
+        plugin.Save();
+        Done(move, move.Chips);
+    }
+
+    /// <summary>Sets the table to the server's players and chips (after a crash or a mistake here).</summary>
+    public void UseServerStacks()
+    {
+        if (Current is not { } t || Table.HandInProgress)
+            return;
+        foreach (var seat in Table.Seats.ToList())
+        {
+            if (!t.Expected.Any(p => Same(p, seat)))
+                Table.RemoveSeat(seat);
+        }
+
+        foreach (var p in t.Expected)
+        {
+            if (Table.Seats.FirstOrDefault(s => Same(p, s)) is { } seat)
+            {
+                if (seat.Stack != p.Chips)
+                    Table.AdjustChips(seat, p.Chips - seat.Stack);
+            }
+            else
+            {
+                Table.AddSeatBeforeButton(p.Name, p.World, p.Chips);
+            }
+        }
+
+        plugin.Record($"Tournament: stacks set to the server's: {string.Join(", ", t.Expected.Select(p => $"{p.Name} {p.Chips:N0}"))}");
+        Mismatch = null;
+        plugin.Save();
+    }
+
+    private static bool Same(TournamentPlayer p, Seat s) =>
+        p.Name.Equals(s.Name, StringComparison.OrdinalIgnoreCase) && p.World.Equals(s.World, StringComparison.OrdinalIgnoreCase);
+
+    private void Done(TournamentInstruction instruction, long chips)
+    {
+        if (Current is not { } t)
+            return;
+        Post("done", JsonSerializer.Serialize(new { t = t.Id, id = instruction.Id, chips }), ApplyAnswer);
+    }
+
+    private void ApplyAnswer(string answer)
+    {
+        using var doc = JsonDocument.Parse(answer);
+        if (doc.RootElement.TryGetProperty("tournament", out var view))
+            Apply(TournamentInfo.Parse(view));
     }
 
     // ---- hands -----------------------------------------------------------------------------------
@@ -295,17 +448,41 @@ public sealed class TournamentClient : IDisposable
             SendReport();
 
         CallLevels();
+        CheckStacks();
     }
 
     private void QueueHand()
     {
         var busts = Table.Seats.Where(s => s.InHand && s.Stack == 0).ToList();
+        var kept = Table.Seats.Where(s => s.Stack > 0).ToList();
+
+        // Who has the button and who'd be big blind next hand, so the server moves the right player.
+        Seat? NextWithChips(int from)
+        {
+            for (var n = 1; n <= Table.Seats.Count; n++)
+            {
+                var seat = Table.Seats[((from + n) % Table.Seats.Count + Table.Seats.Count) % Table.Seats.Count];
+                if (seat.Stack > 0)
+                    return seat;
+            }
+
+            return null;
+        }
+
+        var button = Table.ButtonIndex >= 0 && Table.ButtonIndex < Table.Seats.Count && Table.Seats[Table.ButtonIndex].Stack > 0
+            ? Table.Seats[Table.ButtonIndex]
+            : NextWithChips(Table.ButtonIndex);
+        var nextBigBlind = Table.BigBlindIndex >= 0 ? NextWithChips(Table.BigBlindIndex) : null;
+        object? Who(Seat? s) => s is null ? null : new { name = s.Name, world = s.World };
+
         var json = JsonSerializer.Serialize(new
         {
             t = Config.TournamentId,
             hand = Table.HandNumber,
-            stacks = Table.Seats.Where(s => s.Stack > 0).Select(s => new { name = s.Name, world = s.World, chips = s.Stack }),
+            stacks = kept.Select(s => new { name = s.Name, world = s.World, chips = s.Stack }),
             busts = busts.Select(s => new { name = s.Name, world = s.World, start = s.StartingStack }),
+            button = Who(button),
+            nextBB = Who(nextBigBlind),
         });
         foreach (var seat in busts)
         {
@@ -326,7 +503,16 @@ public sealed class TournamentClient : IDisposable
         {
             reports.Dequeue();
             reportTries = 0;
-            HandleHandAnswer(answer);
+            using var doc = JsonDocument.Parse(answer);
+            var warning = Json.Str(doc.RootElement, "warning");
+            if (warning.Length > 0)
+            {
+                Notice = $"Chip check: {warning} Tell the owner.";
+                plugin.Chat.PrintLocal(Notice);
+            }
+
+            if (doc.RootElement.TryGetProperty("tournament", out var view))
+                Apply(TournamentInfo.Parse(view));
         }, failed: refused =>
         {
             if (refused || ++reportTries >= 30)
@@ -343,31 +529,27 @@ public sealed class TournamentClient : IDisposable
         });
     }
 
-    private void HandleHandAnswer(string answer)
+    /// <summary>Between hands, compares this table with the server's players and chips after the same hand.</summary>
+    private void CheckStacks()
     {
-        using var doc = JsonDocument.Parse(answer);
-        var root = doc.RootElement;
-        var lines = new List<string>();
-        if (root.TryGetProperty("out", out var gone) && gone.ValueKind == JsonValueKind.Array)
-            lines.AddRange(gone.EnumerateArray().Select(o => Json.Str(o, "text")).Where(x => x.Length > 0));
-        var left = (int)Json.Long(root, "playersLeft");
-        var finished = root.TryGetProperty("finished", out var f) && f.ValueKind == JsonValueKind.True;
-        if (lines.Count > 0 && !finished && left > 0)
-            lines.Add($"{left} players left.");
-        if (lines.Count > 0)
-            plugin.Chat.SayToTable(lines);
-        foreach (var line in lines)
-            plugin.Record(line);
-
-        var warning = Json.Str(root, "warning");
-        if (warning.Length > 0)
+        Mismatch = null;
+        if (Current is not { Status: "running" } t || t.Id != Config.TournamentId || Table.HandInProgress || reports.Count > 0 ||
+            reporting || posting > 0 || t.Instructions.Count > 0 || t.ExpectedHand != Table.HandNumber || t.ExpectedHand == 0)
+            return;
+        var differences = new List<string>();
+        foreach (var p in t.Expected)
         {
-            Notice = $"Chip check: {warning} Tell the owner.";
-            plugin.Chat.PrintLocal(Notice);
+            var seat = Table.Seats.FirstOrDefault(s => Same(p, s));
+            if (seat is null)
+                differences.Add($"{p.Name} isn't seated here (server: {p.Chips:N0})");
+            else if (seat.Stack != p.Chips)
+                differences.Add($"{p.Name} has {seat.Stack:N0} here, {p.Chips:N0} on the server");
         }
 
-        if (root.TryGetProperty("tournament", out var view) && TournamentInfo.Parse(view) is { } info)
-            Apply(info);
+        foreach (var seat in Table.Seats.Where(s => !t.Expected.Any(p => Same(p, s))))
+            differences.Add($"{seat.Name} is seated here but not on the server");
+        if (differences.Count > 0)
+            Mismatch = string.Join("; ", differences) + ".";
     }
 
     /// <summary>Calls each new level in chat, and warns a minute before the blinds go up.</summary>
@@ -400,7 +582,10 @@ public sealed class TournamentClient : IDisposable
         }
     }
 
-    /// <summary>The tournament is over (or cancelled): its players leave the table, and the table is a cash table again.</summary>
+    /// <summary>
+    /// The tournament is over, cancelled, or done for this table (it closed, or went to another dealer): its players
+    /// leave, and the table is a cash table again.
+    /// </summary>
     private void End(TournamentInfo info)
     {
         if (Table.HandInProgress)
@@ -408,21 +593,26 @@ public sealed class TournamentClient : IDisposable
         foreach (var seat in Table.Seats.ToList())
             Table.RemoveSeat(seat);
         Config.TournamentId = string.Empty;
+        Config.TournamentFeedSeq = 0;
         Table.TournamentMode = false;
         Table.Ante = 0;
         Table.SmallBlind = Config.SmallBlind;
         Table.BigBlind = Config.BigBlind;
         reports.Clear();
+        Mismatch = null;
 
         var lines = new List<string>();
-        if (info.Status == "cancelled")
+        if (info.Status == "released")
+        {
+            Notice = info.Reason.Length > 0 ? info.Reason : "Your tournament table is done.";
+            plugin.Chat.PrintLocal(Notice);
+        }
+        else if (info.Status == "cancelled")
         {
             lines.Add($"The tournament {info.Name} was cancelled by the owner.");
         }
         else
         {
-            var winner = info.Results.FirstOrDefault(r => r.Place == 1);
-            lines.Add(winner is null ? $"{info.Name} is over." : $"{winner.Name} wins {info.Name}! Congratulations!");
             var paid = info.Results.Where(r => r.Prize > 0).Select(r => $"{Json.Ordinal(r.Place)} {r.Name} {r.Prize:N0}").ToList();
             if (paid.Count > 0)
                 lines.Add($"Prizes (paid by the owner): {string.Join(", ", paid)}");
@@ -431,7 +621,7 @@ public sealed class TournamentClient : IDisposable
         plugin.Chat.SayToTable(lines);
         foreach (var line in lines)
             plugin.Record(line);
-        plugin.Record("=== Tournament over: back to a cash table ===");
+        plugin.Record("=== Tournament over at this table: back to a cash table ===");
         plugin.Save();
     }
 
@@ -439,6 +629,7 @@ public sealed class TournamentClient : IDisposable
     {
         var url = $"{BaseUrl}/api/t/{Config.WebTableId}/tournament/{what}";
         var session = Config.AuthSessionKey;
+        posting++;
         _ = Task.Run(async () =>
         {
             string? answer = null;
@@ -466,6 +657,7 @@ public sealed class TournamentClient : IDisposable
 
             await framework.RunOnFrameworkThread(() =>
             {
+                posting--;
                 if (what == "hand")
                     reporting = false;
                 if (answer is not null)

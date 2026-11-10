@@ -74,6 +74,24 @@ public sealed class TournamentTableTests
     }
 
     [Fact]
+    public void A_moved_player_sits_just_before_the_button()
+    {
+        var table = NewTable(1000, 1000, 1000);
+        table.StartHand();
+        table.CancelHand();
+        var button = table.Seats[table.ButtonIndex];
+
+        var moved = table.AddSeatBeforeButton("New", "World", 2000);
+
+        Assert.Same(button, table.Seats[table.ButtonIndex]);
+        Assert.Same(moved, table.Seats[table.ButtonIndex - 1]);
+        table.StartHand();
+        Assert.True(moved.InHand);
+        // The button moved on one seat, past the new player: they pay the blinds when they reach them.
+        Assert.NotEqual(moved, table.Seats[table.SmallBlindIndex]);
+    }
+
+    [Fact]
     public void No_rake_and_no_bomb_pots()
     {
         var table = NewTable(1000, 1000);
