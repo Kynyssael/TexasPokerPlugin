@@ -41,7 +41,8 @@ The plugin is for approved dealers only. Until you sign in, `/poker` shows a sig
 
 1. Log in to the character you deal on, then click **Sign in with XIVAuth**.
 2. Your browser opens XIVAuth. Sign in there, choose that character and enter the code the plugin shows.
-3. The plugin unlocks. A sign-in lasts 30 days.
+3. The plugin unlocks. A sign-in lasts 30 days. Its key is saved encrypted for your Windows account, so a copy of
+   your plugin settings is no use on another PC.
 
 Only characters with a license can sign in:
 
@@ -60,6 +61,9 @@ Tables of a venue's dealers show the venue's name, logo and colours on the websi
 (PNG, JPEG or WebP under 256 KB); it shows on the tables once Elenor approves it, and until then the owner can
 withdraw it. Under **Colours**, the owner picks the felt and an accent colour (trim, pot, titles) and clicks *Save
 colours*; open tables change straight away. *Use house colours* goes back to the Eorzean Poker green and gold.
+Under **Cards**, the owner picks the card face (cream, white or parchment), corners (classic or round), font
+(standard, serif or typewriter) and back: stripes in two colours, a plain colour, the venue logo, or their own
+picture, which shows once Elenor approves it (like the logo). *Save cards* applies it to open tables.
 
 Every venue has a **venue page**, e.g. `eorzeanpoker.app/v/primal-den`, listing its open tables so players can find
 them; *Open* and *Copy* are next to it on the Venue tab. Dealers who aren't the owner see which venue they deal for,
@@ -117,7 +121,10 @@ Turn off **Send to chat** at the top of the window to try it out: every message 
    ("Time's up, Name: fold."). The countdown sits next to the player to act, with *Pause* (for a ruling) and *More
    time* (their full time again); players see it on the web table. While you have an action picked, the time
    waits for you to confirm it.
-4. To cash a player out, click *Cash out* on the Players tab and trade them the amount shown.
+4. To cash a player out, click *Cash out* on the Players tab, then *Remove them and trade*: the plugin asks them to
+   trade and types in their gil once they accept. Check it (they may put gil in too) and press *Trade* and *Confirm*.
+   Untick *Open a trade with them* in that popup (or *Open a trade when cashing out* in Settings) to trade them
+   yourself. Anything still owed shows under **Gil to pay** on the Players tab, with a *Trade* button each.
 5. At the end of a night, Ctrl+click *Reset* next to *Hands dealt* on the Players tab: the next hand is Hand #1 again,
    and a new session log starts.
 
@@ -127,7 +134,8 @@ still to pay" (a trade carries at most 1,000,000 gil, so big amounts come in par
 straight onto their stack as a rebuy (during their hand, as soon as the hand is over), with *Undo* if it was a tip or a
 payback; untick *Add traded gil to the player's stack* (Settings, blinds and buy-in) to add it yourself instead. Gil
 from someone not seated shows at the top of the Players and Table tabs: *Seat with* that amount, or *Ignore*. Paying more than the table said, or paying
-someone nothing is owed to, is flagged in red. Every trade goes in the session log.
+someone nothing is owed to, is flagged in red. Every trade goes in the session log. Trades are only watched while the
+poker window or the dealer bar is open, so your own trades away from the table stay out of it.
 
 **Playing at your own table.** With only one player around, click *Seat me* on the Players tab (or seat yourself as
 your target). Your buy-in is your own gil, and party chat is told the dealer is playing. While you're seated, the
