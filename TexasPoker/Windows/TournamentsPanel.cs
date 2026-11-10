@@ -91,6 +91,7 @@ public sealed class TournamentsPanel
             ImGui.TextColored(DealerControls.Muted, "No tournaments yet.");
         foreach (var t in section.List)
             DrawTournament(venueId, section, t);
+        DrawSeries(venueId, section);
         ImGui.PopID();
     }
 
@@ -410,13 +411,28 @@ public sealed class TournamentsPanel
     {
         if (t.Status == "cancelled")
             ImGui.TextColored(DealerControls.Red, $"Cancelled. Refund each player their entry fee ({t.Fee:N0} gil).");
+        if (t.Status == "finished")
+        {
+            var league = sections.GetValueOrDefault(venueId)?.League;
+            ImGui.TextColored(DealerControls.Muted, t.OnLeaderboard
+                ? "On the server-wide leaderboard (its points come from the server's own table)."
+                : t.Ranked
+                    ? $"Not on the server-wide leaderboard: a ranked tournament needs {league?.MinPlayers ?? 6} players or more."
+                    : "Not ranked: not on the server-wide leaderboard.");
+            if (t.Series is { } sid && sections.GetValueOrDefault(venueId)?.Series.Find(s => s.Id == sid) is { } series)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(DealerControls.Muted, $"In the series {series.Name} (the Points column).");
+            }
+        }
 
-        if (t.Results.Count > 0 && ImGui.BeginTable("##results", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        if (t.Results.Count > 0 && ImGui.BeginTable("##results", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
         {
             ImGui.TableSetupColumn("Place", ImGuiTableColumnFlags.WidthFixed, 50);
             ImGui.TableSetupColumn("Player");
             ImGui.TableSetupColumn("Prize", ImGuiTableColumnFlags.WidthFixed, 110);
             ImGui.TableSetupColumn("Points", ImGuiTableColumnFlags.WidthFixed, 60);
+            ImGui.TableSetupColumn("Counts", ImGuiTableColumnFlags.WidthFixed, 60);
             ImGui.TableSetupColumn("##pay", ImGuiTableColumnFlags.WidthFixed, 190);
             ImGui.TableHeadersRow();
             foreach (var r in t.Results)
@@ -430,7 +446,17 @@ public sealed class TournamentsPanel
                 ImGui.TableNextColumn();
                 ImGui.TextUnformatted(r.Prize > 0 ? r.Prize.ToString("N0") : "-");
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(r.Points.ToString("0.#"));
+                ImGui.TextColored(r.Removed ? DealerControls.Muted : new Vector4(1, 1, 1, 1), r.Points.ToString("0.#"));
+                ImGui.TableNextColumn();
+                var counts = !r.Removed;
+                ImGui.BeginDisabled(busy || t.Status != "finished");
+                if (ImGui.Checkbox("##counts", ref counts))
+                    Send(venueId, HttpMethod.Post, $"{path}/result", JsonContent(new { key = r.Key, removed = !counts }),
+                         counts ? $"{r.Name}'s points count again." : $"{r.Name}'s points are taken away (their place stays).");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Untick to take this player's points away, in the series and on the server-wide leaderboard\n" +
+                                     "(a mistake, a disqualification). Their place and prize stay; the change is logged.");
                 ImGui.TableNextColumn();
                 if (r.Prize > 0)
                 {
@@ -467,6 +493,75 @@ public sealed class TournamentsPanel
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Hold Ctrl and click: remove it and its results.");
+    }
+
+    private string newSeries = string.Empty;
+
+    /// <summary>The venue's series: its own leagues, with leaderboards on the venue page.</summary>
+    private void DrawSeries(string venueId, Section section)
+    {
+        if (!ImGui.TreeNode("Series and leaderboards##series"))
+            return;
+        ImGui.TextWrapped("A series is your venue's own league: put tournaments in it (in their settings) and their series points add up " +
+                          "on your venue page. Every ranked tournament also counts on the server-wide leaderboard.");
+        if (section.League is { } league)
+        {
+            ImGui.TextColored(DealerControls.Gold, "Server-wide leaderboard");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Copy link##league"))
+            {
+                ImGui.SetClipboardText(league.Page);
+                Show("Copied the leaderboard link.", false);
+            }
+        }
+
+        foreach (var s in section.Series)
+        {
+            ImGui.PushID(s.Id);
+            ImGui.Bullet();
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{s.Name}{(s.Closed ? " (closed)" : string.Empty)}");
+            ImGui.SameLine();
+            ImGui.TextColored(DealerControls.Muted, s.Tournaments == 0 ? "no results yet"
+                : $"{s.Tournaments} tournament{(s.Tournaments == 1 ? string.Empty : "s")}" + (s.Leader is { } leader ? $", led by {leader}" : string.Empty));
+            ImGui.SameLine();
+            ImGui.BeginDisabled(busy);
+            if (ImGui.SmallButton(s.Closed ? "Open again" : "Close"))
+                Send(venueId, HttpMethod.Post, $"/api/venue/{venueId}/series/{s.Id}/close", JsonContent(new { closed = !s.Closed }),
+                     s.Closed ? $"{s.Name} is open again." : $"{s.Name} is closed: its leaderboard stays up, frozen.");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(s.Closed ? "New tournaments can go in it again." : "No new tournaments go in it; its leaderboard stays on your venue page.");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Copy CSV link"))
+            {
+                ImGui.SetClipboardText(s.Csv);
+                Show($"Copied the link to {s.Name}'s leaderboard as a CSV file (for a spreadsheet or Discord).", false);
+            }
+
+            ImGui.SameLine();
+            ImGui.BeginDisabled(busy || !ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("Delete"))
+                Send(venueId, HttpMethod.Delete, $"/api/venue/{venueId}/series/{s.Id}", null, $"Deleted {s.Name}.");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click. Only a series with no tournaments in it; close one that has some.");
+            ImGui.PopID();
+        }
+
+        ImGui.BeginDisabled(busy);
+        ImGui.SetNextItemWidth(220);
+        var enter = ImGui.InputTextWithHint("##newseries", "Winter League", ref newSeries, 60, ImGuiInputTextFlags.EnterReturnsTrue);
+        ImGui.SameLine();
+        if ((ImGui.Button("New series") || enter) && newSeries.Trim().Length > 0)
+        {
+            Send(venueId, HttpMethod.Post, $"/api/venue/{venueId}/series", JsonContent(new { name = newSeries.Trim() }),
+                 $"Made the series {newSeries.Trim()}. Pick it in a tournament's settings.");
+            newSeries = string.Empty;
+        }
+
+        ImGui.EndDisabled();
+        ImGui.TreePop();
     }
 
     private void Register(string venueId, TournamentView t, string who)
@@ -542,9 +637,36 @@ public sealed class TournamentsPanel
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Percent of the prize pool for 1st, 2nd, 3rd...: they must add up to 100. For example 50, 30, 20.");
         ImGui.SetNextItemWidth(260);
-        ImGui.InputText("Points by place", ref d.Points, 200);
+        ImGui.InputText("Series points by place", ref d.Points, 200);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Points for 1st, 2nd, 3rd...; places after the last one listed get 0.");
+            ImGui.SetTooltip("Points for 1st, 2nd, 3rd... in your venue's series; places after the last one listed get 0.\n" +
+                             "The server-wide leaderboard uses its own table, the same for every venue.");
+
+        ImGui.Checkbox("Ranked (counts on the server-wide leaderboard)", ref d.Ranked);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(section.League is { } league
+                ? $"Points by place, the same for every venue: {string.Join(", ", league.Points.Take(10).Select((p, i) => $"{Json.Ordinal(i + 1)} {p}"))}.\n" +
+                  $"It counts once it's finished with {league.MinPlayers} players or more. Untick for a casual or test tournament."
+                : "Counts on the server-wide leaderboard once finished.");
+
+        var open = section.Series.Where(s => !s.Closed || s.Id == d.Series).ToList();
+        var current = open.Find(s => s.Id == d.Series);
+        ImGui.SetNextItemWidth(260);
+        if (ImGui.BeginCombo("Series", current?.Name ?? "(none)"))
+        {
+            if (ImGui.Selectable("(none)", current is null))
+                d.Series = null;
+            foreach (var s in open)
+            {
+                if (ImGui.Selectable(s.Name, s.Id == d.Series))
+                    d.Series = s.Id;
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Your venue's own league: its tournaments add up their series points on your venue page. Make one under Series.");
 
         ImGui.BeginDisabled(busy);
         if (ImGui.Button(d.Id is null ? "Create" : "Save"))
@@ -709,8 +831,16 @@ public sealed class TournamentsPanel
 
     // ---- what the server sends ------------------------------------------------------------------------
 
+    private sealed record Series(string Id, string Name, bool Closed, int Tournaments, string? Leader, string Csv);
+
+    private sealed record LeagueRules(int[] Points, int MinPlayers, string Page);
+
     private sealed record Section(List<TournamentView> List, List<Preset> Presets, int MaxPlayers, List<(string Key, string Label)> Dealers)
     {
+        public List<Series> Series { get; init; } = [];
+
+        public LeagueRules? League { get; init; }
+
         public DateTime Loaded { get; init; } = DateTime.UtcNow;
 
         public int[] DefaultPrizes { get; init; } = [50, 30, 20];
@@ -734,6 +864,14 @@ public sealed class TournamentsPanel
             {
                 DefaultPrizes = Ints(root, "prizes") is { Length: > 0 } prizes ? prizes : [50, 30, 20],
                 DefaultPoints = Ints(root, "points") is { Length: > 0 } points ? points : [100, 70, 50, 40, 30, 20, 10, 10, 10, 10],
+                Series = root.TryGetProperty("series", out var ss) && ss.ValueKind == JsonValueKind.Array
+                    ? ss.EnumerateArray().Select(s => new Series(Json.Str(s, "id"), Json.Str(s, "name"), True(s, "closed"), (int)Json.Long(s, "tournaments"),
+                        s.TryGetProperty("leaders", out var ls) && ls.ValueKind == JsonValueKind.Array && ls.GetArrayLength() > 0 ? Json.Str(ls[0], "name") : null,
+                        Json.Str(s, "csv"))).ToList()
+                    : [],
+                League = root.TryGetProperty("league", out var lg) && lg.ValueKind == JsonValueKind.Object
+                    ? new LeagueRules(Ints(lg, "points"), (int)Json.Long(lg, "minPlayers"), Json.Str(lg, "page"))
+                    : null,
             };
         }
     }
@@ -753,13 +891,19 @@ public sealed class TournamentsPanel
 
     private sealed record MoveView(string Player, string Kind, int From, int To);
 
-    private sealed record Result(string Key, string Name, string World, int Place, long Prize, double Points, bool Paid);
+    private sealed record Result(string Key, string Name, string World, int Place, long Prize, double Points, bool Paid, bool Removed);
 
     private sealed record TournamentView(
         string Id, string Name, string Status, long Fee, long? Pool, long PoolNow, long Chips, List<TournamentLevel> Levels,
         int[] Prizes, int[] Points, int TablesNeeded, List<TableView> Tables, List<MoveView> Moves, bool HandForHand, bool? HandForHandSet,
         List<Entry> Entries, int PlayersLeft, TournamentClock? Clock, List<Result> Results, List<string> Events, DateTime Received)
     {
+        public bool Ranked { get; init; } = true;
+
+        public string? Series { get; init; }
+
+        public bool OnLeaderboard { get; init; }
+
         public static TournamentView Parse(JsonElement t, DateTime now)
         {
             var entries = t.TryGetProperty("entries", out var es) && es.ValueKind == JsonValueKind.Array
@@ -780,7 +924,8 @@ public sealed class TournamentsPanel
                 ? rs.EnumerateArray().Select(r => new Result(Json.Str(r, "key"), Json.Str(r, "name"), Json.Str(r, "world"), (int)Json.Long(r, "place"),
                                                              Json.Long(r, "prize"),
                                                              r.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Number ? pts.GetDouble() : 0,
-                                                             r.TryGetProperty("paid", out var paid) && paid.ValueKind == JsonValueKind.True)).ToList()
+                                                             r.TryGetProperty("paid", out var paid) && paid.ValueKind == JsonValueKind.True,
+                                                             True(r, "removed"))).ToList()
                 : [];
             var events = t.TryGetProperty("events", out var ev) && ev.ValueKind == JsonValueKind.Array
                 ? ev.EnumerateArray().Select(x =>
@@ -797,7 +942,12 @@ public sealed class TournamentsPanel
                 Ints(t, "prizes"), Ints(t, "points"), (int)Json.Long(t, "tablesNeeded"), tables, moves, True(t, "handForHand"), set,
                 entries, (int)Json.Long(t, "playersLeft"),
                 t.TryGetProperty("clock", out var clock) ? TournamentClock.Parse(clock) : null,
-                results, events, now);
+                results, events, now)
+            {
+                Ranked = !t.TryGetProperty("ranked", out var rk) || rk.ValueKind != JsonValueKind.False,
+                Series = Json.Str(t, "series") is { Length: > 0 } sid ? sid : null,
+                OnLeaderboard = True(t, "onLeaderboard"),
+            };
         }
     }
 
@@ -824,6 +974,8 @@ public sealed class TournamentsPanel
         public List<LevelRow> Levels = [];
         public string Prizes = "50, 30, 20";
         public string Points = "100, 70, 50, 40, 30, 20, 10, 10, 10, 10";
+        public bool Ranked = true;
+        public string? Series;
 
         public static Draft New(Section section)
         {
@@ -847,6 +999,7 @@ public sealed class TournamentsPanel
         {
             Id = t.Id, Name = t.Name, Fee = t.Fee, OwnPool = t.Pool is not null, Pool = t.Pool ?? 0, Chips = t.Chips,
             Levels = t.Levels.Select(LevelRow.From).ToList(), Prizes = string.Join(", ", t.Prizes), Points = string.Join(", ", t.Points),
+            Ranked = t.Ranked, Series = t.Series,
         };
 
         /// <summary>The settings as the server takes them, or null if the prize split or points don't read as numbers.</summary>
@@ -879,6 +1032,8 @@ public sealed class TournamentsPanel
                     : new { sb = l.Sb, bb = l.Bb, ante = l.Ante, minutes = l.Minutes }),
                 prizes,
                 points,
+                ranked = Ranked,
+                series = Series,
             };
         }
     }

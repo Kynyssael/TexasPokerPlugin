@@ -234,6 +234,14 @@ one entry each, no rebuys, no late entry.
    owner's Venue tab shows the results: place, prize, points, with a **Trade** button for each prize and a *Paid*
    box. Ctrl+click *Cancel tournament* ends it early (refund the entry fees).
 
+**Points and leaderboards.** Every tournament is **Ranked** unless the owner unticks it: once finished with enough
+players (6 by default), its places earn points on the **server-wide leaderboard** at `eorzeanpoker.app/leaderboard`,
+shared by every venue, so players can be seeded across the board. Those points come from one table that Elenor sets for
+all venues. A venue can also run its own **series** (*Series and leaderboards* in the Tournaments part): pick one in a
+tournament's settings, and its **series points** (the owner's own table) add up on the venue page, with a CSV file for
+spreadsheets or Discord. Close a series to freeze its leaderboard. In the results, untick *Counts* to take a player's
+points away (a mistake, a disqualification); their place and prize stay.
+
 While it runs, the owner sees each table with its dealer and players, the moves in progress, and every player's
 table and chips. The table page shows the tournament above the table: its name, the table number, level, blinds and
 ante, the time to the next level, how many players are left, and hand-for-hand.
