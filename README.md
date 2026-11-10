@@ -242,6 +242,15 @@ tournament's settings, and its **series points** (the owner's own table) add up 
 spreadsheets or Discord. Close a series to freeze its leaderboard. In the results, untick *Counts* to take a player's
 points away (a mistake, a disqualification); their place and prize stay.
 
+**Commentator view.** Tick *Commentator view* in a tournament's settings and pick the delay (1 to 10 minutes behind,
+2 by default, or *After each hand*: a hand plays once it's over). Then *Make the link* and *Copy link* for your caster.
+The link (`eorzeanpoker.app/c/...#code`) shows every table's hole cards, each player's chance to win and tie, their
+hand, their outs on the turn ("9 outs, mostly a flush"), the pot and board, the level and clock, and every player's
+chips; with several tables, the caster picks one, starting on the *Feature table* you choose. It opens in one browser
+only; Ctrl+click *New link* if it leaks. The chances come from the dealers' plugins: every run-out counted from the
+flop on, a large sample before it. The cards are sealed by each dealer's plugin to the caster's browser, so the server
+only ever passes ciphertext on. If the commentary is streamed, give the stream its own delay too.
+
 While it runs, the owner sees each table with its dealer and players, the moves in progress, and every player's
 table and chips. The table page shows the tournament above the table: its name, the table number, level, blinds and
 ante, the time to the next level, how many players are left, and hand-for-hand.

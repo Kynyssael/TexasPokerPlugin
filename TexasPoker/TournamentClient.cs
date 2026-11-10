@@ -66,6 +66,9 @@ public sealed record TournamentInfo(
     TournamentClock? Clock, int PlayersLeft, int Entries, bool MayDeal, bool HandForHand, List<TournamentInstruction> Instructions,
     List<(int Seq, string Text)> Feed, int ExpectedHand, List<TournamentPlayer> Expected, List<TournamentPlace> Results, string Reason)
 {
+    /// <summary>The commentator browser's public key, while the commentator view is on and open: seal updates to it.</summary>
+    public string? CommentatorKey { get; init; }
+
     public static TournamentInfo? Parse(JsonElement t)
     {
         if (t.ValueKind != JsonValueKind.Object)
@@ -95,7 +98,12 @@ public sealed record TournamentInfo(
             t.TryGetProperty("levels", out var levels) ? TournamentLevel.ParseAll(levels) : [],
             t.TryGetProperty("clock", out var clock) ? TournamentClock.Parse(clock) : null,
             (int)Json.Long(t, "playersLeft"), (int)Json.Long(t, "entries"), True(t, "mayDeal"), True(t, "handForHand"),
-            instructions, feed, expectedHand, expected, results, Json.Str(t, "reason"));
+            instructions, feed, expectedHand, expected, results, Json.Str(t, "reason"))
+        {
+            CommentatorKey = t.TryGetProperty("commentator", out var c) && c.ValueKind == JsonValueKind.Object && Json.Str(c, "pub") is { Length: > 0 } pub
+                ? pub
+                : null,
+        };
     }
 }
 
@@ -449,7 +457,111 @@ public sealed class TournamentClient : IDisposable
 
         CallLevels();
         CheckStacks();
+        SendCommentary();
     }
+
+    // ---- the commentator view --------------------------------------------------------------------
+
+    private string lastCommentary = string.Empty;
+    private bool sendingCommentary;
+    private string? equityKey;
+    private IReadOnlyList<PlayerEquity> equity = [];
+
+    /// <summary>
+    /// While the commentator view is open, every change at this table goes to the commentator: every player's cards,
+    /// their chances and their hand, sealed so only the commentator's browser can read them. The server passes it on
+    /// after the delay.
+    /// </summary>
+    private void SendCommentary()
+    {
+        if (sendingCommentary || Current is not { Status: "running", CommentatorKey: { } key } t || t.Id != Config.TournamentId)
+            return;
+        var state = $"{Table.Sequence}|{Table.HandNumber}|{Table.Street}|{string.Join(",", Table.Seats.Select(s => $"{s.Name}:{s.Stack}:{s.SittingOut}"))}";
+        if (state == lastCommentary)
+            return;
+        lastCommentary = state;
+
+        string sealedText;
+        try
+        {
+            sealedText = CommentatorSealer.Seal(key, CommentaryJson(t));
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
+        {
+            return; // not a key this can seal to
+        }
+
+        sendingCommentary = true;
+        var json = JsonSerializer.Serialize(new { t = t.Id, hand = Table.HandNumber, over = !Table.HandInProgress, c = sealedText });
+        Post("commentary", json, _ => sendingCommentary = false, _ => sendingCommentary = false);
+    }
+
+    private string CommentaryJson(TournamentInfo t)
+    {
+        static object CardOf(Card c) => new { r = c.RankText, s = c.SuitText(false) };
+        var live = Table.Seats.Where(s => s.InHand && !s.Folded && s.HoleCards.Count == 2).ToList();
+        var board = Table.Board.ToList();
+        var key = $"{Table.HandNumber}|{board.Count}|{string.Join(",", live.Select(s => s.Name))}";
+        if (key != equityKey)
+        {
+            equityKey = key;
+            equity = live.Count >= 2 && Table.HandNumber > 0 ? Equity.Calculate(live.Select(s => s.HoleCards).ToList(), board) : [];
+        }
+
+        var showing = Table.HandInProgress || Table.Street == Street.HandOver;
+        return JsonSerializer.Serialize(new
+        {
+            table = t.TableNo,
+            hand = Table.HandNumber,
+            street = Table.Street.ToString(),
+            inProgress = Table.HandInProgress,
+            board = board.Select(CardOf),
+            pot = Table.Pot,
+            sb = Table.SmallBlind,
+            bb = Table.BigBlind,
+            ante = Table.Ante,
+            button = Table.ButtonIndex,
+            actor = Table.Actor?.Name,
+            lastAction = Table.LastAction,
+            results = Table.HandInProgress ? [] : Table.LastResults.Select(r =>
+                $"{r.Label}: {string.Join(", ", r.Winners.Select(w => w.Name))} wins {r.Amount:N0}" + (r.Hand is { } h ? $" ({h})" : string.Empty)),
+            players = Table.Seats.Select(s =>
+            {
+                var i = live.IndexOf(s);
+                var chances = i >= 0 && i < equity.Count ? equity[i] : null;
+                var hand = showing && s.HoleCards.Count == 2 ? Table.CurrentHand(s)?.Describe() : null;
+                return new
+                {
+                    name = s.Name,
+                    stack = s.Stack,
+                    bet = s.StreetBet,
+                    cards = showing && s.InHand ? s.HoleCards.Select(CardOf) : [],
+                    inHand = s.InHand && showing,
+                    folded = s.Folded,
+                    allIn = s.AllIn,
+                    away = s.SittingOut,
+                    win = chances?.Win,
+                    tie = chances?.Tie,
+                    outs = chances?.Outs ?? 0,
+                    outsTo = chances?.OutsTo is { } to ? HandName(to) : null,
+                    hand,
+                };
+            }),
+        });
+    }
+
+    private static string HandName(HandCategory category) => category switch
+    {
+        HandCategory.HighCard => "high card",
+        HandCategory.OnePair => "a pair",
+        HandCategory.TwoPair => "two pair",
+        HandCategory.ThreeOfAKind => "three of a kind",
+        HandCategory.Straight => "a straight",
+        HandCategory.Flush => "a flush",
+        HandCategory.FullHouse => "a full house",
+        HandCategory.FourOfAKind => "four of a kind",
+        _ => "a straight flush",
+    };
 
     private void QueueHand()
     {
@@ -629,7 +741,9 @@ public sealed class TournamentClient : IDisposable
     {
         var url = $"{BaseUrl}/api/t/{Config.WebTableId}/tournament/{what}";
         var session = Config.AuthSessionKey;
-        posting++;
+        var quiet = what == "commentary"; // many, and nothing to tell the dealer if one doesn't arrive
+        if (!quiet)
+            posting++;
         _ = Task.Run(async () =>
         {
             string? answer = null;
@@ -657,7 +771,8 @@ public sealed class TournamentClient : IDisposable
 
             await framework.RunOnFrameworkThread(() =>
             {
-                posting--;
+                if (!quiet)
+                    posting--;
                 if (what == "hand")
                     reporting = false;
                 if (answer is not null)
@@ -673,7 +788,7 @@ public sealed class TournamentClient : IDisposable
                 }
                 else
                 {
-                    if (what != "hand" || refused)
+                    if (!quiet && (what != "hand" || refused))
                     {
                         Notice = $"Tournament server: {error}";
                         plugin.Chat.PrintLocal(Notice);

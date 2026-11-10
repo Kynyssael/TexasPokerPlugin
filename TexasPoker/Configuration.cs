@@ -208,6 +208,9 @@ public sealed class Configuration : IPluginConfiguration
     /// </summary>
     public string TournamentId { get; set; } = string.Empty;
 
+    /// <summary>The owner's commentator link tokens, by tournament id (the server only knows a hash of each).</summary>
+    public Dictionary<string, string> CommentatorTokens { get; set; } = new();
+
     /// <summary>The last tournament table news line announced in chat, so none is said twice (after a reload too).</summary>
     public int TournamentFeedSeq { get; set; }
 

@@ -120,6 +120,9 @@ public sealed class TournamentsPanel
                           $"{t.Chips:N0} chips each. Prizes {string.Join(" / ", t.Prizes.Select(p => $"{p}%"))}. " +
                           $"{t.Levels.Count(l => !l.IsBreak)} levels from {t.Levels.FirstOrDefault()?.Blinds}.");
 
+        if (t.CommentatorOn && t.Status is "draft" or "running")
+            DrawCommentator(venueId, t, path);
+
         switch (t.Status)
         {
             case "draft":
@@ -495,6 +498,79 @@ public sealed class TournamentsPanel
             ImGui.SetTooltip("Hold Ctrl and click: remove it and its results.");
     }
 
+    /// <summary>
+    /// The commentator link: made here (the token stays in this plugin and the link; the server only gets its hash),
+    /// copied to give to the caster, or replaced if it leaked. And the table the view opens on.
+    /// </summary>
+    private void DrawCommentator(string venueId, TournamentView t, string path)
+    {
+        ImGui.TextColored(DealerControls.Gold, "Commentator");
+        ImGui.SameLine();
+        var tokens = plugin.Configuration.CommentatorTokens;
+        var token = tokens.GetValueOrDefault(t.Id);
+        ImGui.BeginDisabled(busy);
+        if (!t.CommentatorLinked || token is null)
+        {
+            if (ImGui.SmallButton(t.CommentatorLinked ? "Make a new link (this PC has lost it)" : "Make the link"))
+                NewCommentatorLink(venueId, t, path);
+        }
+        else
+        {
+            if (ImGui.SmallButton("Copy link"))
+            {
+                ImGui.SetClipboardText($"{BaseUrl}/c/{t.Id}#{token}");
+                Show("Copied the commentator link: give it to your caster only. It opens in one browser.", false);
+            }
+
+            ImGui.SameLine();
+            ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("New link"))
+                NewCommentatorLink(venueId, t, path);
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click: the old link stops working at once (it leaked, or the caster changes browser).");
+            ImGui.SameLine();
+            ImGui.TextColored(DealerControls.Muted, t.CommentatorOpened ? "opened in a browser" : "not opened yet");
+        }
+
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        ImGui.TextColored(DealerControls.Muted, t.Delay < 0 ? "(after each hand)" : $"({t.Delay} min behind)");
+
+        var open = t.Tables.Where(x => !x.Broken).ToList();
+        if (t.Status == "running" && open.Count > 1)
+        {
+            ImGui.SetNextItemWidth(160);
+            var current = open.Find(x => x.No == t.Feature);
+            if (ImGui.BeginCombo("Feature table##feature", current is null ? "(any)" : $"Table {current.No}"))
+            {
+                if (ImGui.Selectable("(any)", current is null))
+                    Send(venueId, HttpMethod.Post, $"{path}/commentator", JsonContent(new { feature = (int?)null }), "The commentator view opens on any table.");
+                foreach (var x in open)
+                {
+                    if (ImGui.Selectable($"Table {x.No} ({x.DealerName})", x.No == t.Feature))
+                        Send(venueId, HttpMethod.Post, $"{path}/commentator", JsonContent(new { feature = x.No }), $"Table {x.No} is the feature table.");
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("The table the commentator view shows first. The caster can still pick another.");
+        }
+    }
+
+    private void NewCommentatorLink(string venueId, TournamentView t, string path)
+    {
+        var token = WebPublisher.NewId(24);
+        Send(venueId, HttpMethod.Post, $"{path}/commentator", JsonContent(new { lookup = TexasPoker.Engine.CommentatorSealer.Lookup(t.Id, token) }),
+             "Made a new commentator link. Copy it for your caster; the old one stopped working.", () =>
+             {
+                 plugin.Configuration.CommentatorTokens[t.Id] = token;
+                 plugin.Save();
+             });
+    }
+
     private string newSeries = string.Empty;
 
     /// <summary>The venue's series: its own leagues, with leaderboards on the venue page.</summary>
@@ -667,6 +743,30 @@ public sealed class TournamentsPanel
 
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Your venue's own league: its tournaments add up their series points on your venue page. Make one under Series.");
+
+        ImGui.Checkbox("Commentator view", ref d.Commentator);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A secret link for a caster: every table's hole cards, each player's chance to win and their hand, on a delay.");
+        if (d.Commentator)
+        {
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(170);
+            string DelayText(int m) => m < 0 ? "After each hand" : $"{m} minute{(m == 1 ? string.Empty : "s")} behind";
+            if (ImGui.BeginCombo("##delay", DelayText(d.Delay)))
+            {
+                foreach (var m in new[] { -1, 1, 2, 3, 5, 10 })
+                {
+                    if (ImGui.Selectable(DelayText(m), m == d.Delay))
+                        d.Delay = m;
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("How far the commentator view runs behind the tables, so nobody at a table can be told what it shows.\n" +
+                                 "After each hand: a hand plays back once it's over. If the commentary is streamed, the stream needs its own delay too.");
+        }
 
         ImGui.BeginDisabled(busy);
         if (ImGui.Button(d.Id is null ? "Create" : "Save"))
@@ -904,6 +1004,16 @@ public sealed class TournamentsPanel
 
         public bool OnLeaderboard { get; init; }
 
+        public bool CommentatorOn { get; init; }
+
+        public bool CommentatorLinked { get; init; }
+
+        public bool CommentatorOpened { get; init; }
+
+        public int? Feature { get; init; }
+
+        public int Delay { get; init; } = 2;
+
         public static TournamentView Parse(JsonElement t, DateTime now)
         {
             var entries = t.TryGetProperty("entries", out var es) && es.ValueKind == JsonValueKind.Array
@@ -947,6 +1057,11 @@ public sealed class TournamentsPanel
                 Ranked = !t.TryGetProperty("ranked", out var rk) || rk.ValueKind != JsonValueKind.False,
                 Series = Json.Str(t, "series") is { Length: > 0 } sid ? sid : null,
                 OnLeaderboard = True(t, "onLeaderboard"),
+                CommentatorOn = t.TryGetProperty("commentator", out var cm) && True(cm, "on"),
+                CommentatorLinked = t.TryGetProperty("commentator", out var cl) && True(cl, "linked"),
+                CommentatorOpened = t.TryGetProperty("commentator", out var co) && True(co, "opened"),
+                Feature = t.TryGetProperty("commentator", out var cf) && cf.TryGetProperty("feature", out var fv) && fv.ValueKind == JsonValueKind.Number ? fv.GetInt32() : null,
+                Delay = (int)Json.Long(t, "delay"),
             };
         }
     }
@@ -976,6 +1091,8 @@ public sealed class TournamentsPanel
         public string Points = "100, 70, 50, 40, 30, 20, 10, 10, 10, 10";
         public bool Ranked = true;
         public string? Series;
+        public bool Commentator;
+        public int Delay = 2;
 
         public static Draft New(Section section)
         {
@@ -999,7 +1116,7 @@ public sealed class TournamentsPanel
         {
             Id = t.Id, Name = t.Name, Fee = t.Fee, OwnPool = t.Pool is not null, Pool = t.Pool ?? 0, Chips = t.Chips,
             Levels = t.Levels.Select(LevelRow.From).ToList(), Prizes = string.Join(", ", t.Prizes), Points = string.Join(", ", t.Points),
-            Ranked = t.Ranked, Series = t.Series,
+            Ranked = t.Ranked, Series = t.Series, Commentator = t.CommentatorOn, Delay = t.Delay == 0 ? 2 : t.Delay,
         };
 
         /// <summary>The settings as the server takes them, or null if the prize split or points don't read as numbers.</summary>
@@ -1034,6 +1151,8 @@ public sealed class TournamentsPanel
                 points,
                 ranked = Ranked,
                 series = Series,
+                commentator = Commentator,
+                delay = Delay,
             };
         }
     }
