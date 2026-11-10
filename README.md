@@ -249,7 +249,9 @@ hand, their outs on the turn ("9 outs, mostly a flush"), the pot and board, the 
 chips; with several tables, the caster picks one, starting on the *Feature table* you choose. It opens in one browser
 only; Ctrl+click *New link* if it leaks. The chances come from the dealers' plugins: every run-out counted from the
 flop on, a large sample before it. The cards are sealed by each dealer's plugin to the caster's browser, so the server
-only ever passes ciphertext on. If the commentary is streamed, give the stream its own delay too.
+only ever passes ciphertext on. The chip counts, players left and results keep the same delay, so they never give a
+hand away before it plays (the last hand plays, then the winner shows). If the commentary is streamed, give the stream
+its own delay too.
 
 While it runs, the owner sees each table with its dealer and players, the moves in progress, and every player's
 table and chips. The table page shows the tournament above the table: its name, the table number, level, blinds and

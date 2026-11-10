@@ -464,17 +464,19 @@ public sealed class TournamentClient : IDisposable
 
     private string lastCommentary = string.Empty;
     private bool sendingCommentary;
+    private string? queuedCommentary;
     private string? equityKey;
     private IReadOnlyList<PlayerEquity> equity = [];
 
     /// <summary>
     /// While the commentator view is open, every change at this table goes to the commentator: every player's cards,
     /// their chances and their hand, sealed so only the commentator's browser can read them. The server passes it on
-    /// after the delay.
+    /// after the delay. One update is on its way at a time; a newer one waits for it (the latest only), so the last
+    /// update of a hand always goes, even the tournament's last hand, whose report ends the tournament here.
     /// </summary>
     private void SendCommentary()
     {
-        if (sendingCommentary || Current is not { Status: "running", CommentatorKey: { } key } t || t.Id != Config.TournamentId)
+        if (Current is not { Status: "running", CommentatorKey: { } key } t || t.Id != Config.TournamentId)
             return;
         var state = $"{Table.Sequence}|{Table.HandNumber}|{Table.Street}|{string.Join(",", Table.Seats.Select(s => $"{s.Name}:{s.Stack}:{s.SittingOut}"))}";
         if (state == lastCommentary)
@@ -491,9 +493,26 @@ public sealed class TournamentClient : IDisposable
             return; // not a key this can seal to
         }
 
-        sendingCommentary = true;
         var json = JsonSerializer.Serialize(new { t = t.Id, hand = Table.HandNumber, over = !Table.HandInProgress, c = sealedText });
-        Post("commentary", json, _ => sendingCommentary = false, _ => sendingCommentary = false);
+        if (sendingCommentary)
+            queuedCommentary = json;
+        else
+            PostCommentary(json);
+    }
+
+    private void PostCommentary(string json)
+    {
+        sendingCommentary = true;
+        Post("commentary", json, _ => NextCommentary(), _ => NextCommentary());
+    }
+
+    private void NextCommentary()
+    {
+        sendingCommentary = false;
+        if (queuedCommentary is not { } next)
+            return;
+        queuedCommentary = null;
+        PostCommentary(next);
     }
 
     private string CommentaryJson(TournamentInfo t)
