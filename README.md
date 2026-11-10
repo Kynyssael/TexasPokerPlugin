@@ -187,6 +187,38 @@ A venue's owner can run a **high hand bonus** and a **bad beat jackpot**, shared
 Dealers see the jackpot and the current high hand on the Table tab, and players see them on the table page and the
 venue page. The jackpot and the high hand are kept on the server, so every table of the venue shares them.
 
+### Tournaments (Tournament License)
+
+A venue with the **Tournament License** (an add-on to its venue license; ask Elenor on Discord: `elenoramdali`) gets a
+**Tournaments** part on its owner's Venue tab. For now a tournament is one table of up to 7 players, freezeout: one
+entry each, no rebuys, no late entry.
+
+1. **New tournament:** a name, the entry fee, the prize pool (the entry fees, or an amount you set), starting chips,
+   the blind structure, the prize split (percent for 1st, 2nd, 3rd...) and points by place. *Use this structure*
+   fills in a ready-made one: **Turbo** (8 min levels), **Regular** (12 min) or **Deep** (15 min, 20,000 chips),
+   with antes from level 4 and breaks; every level, ante and break can be changed.
+2. **Register** the players at the start of the event, once each has traded you the entry fee (type them as
+   `First Last@World`, or *Register my target*). Their fee trade is checked off.
+3. Pick the **dealer** (you or one of the venue's dealers; dealers don't play) and Ctrl+click **Start**. Registration
+   closes and the server draws the seats and the button.
+4. The dealer, with the web table on, sees the drawn players at the top of their Table tab and clicks **Seat the
+   players** (the table must be empty). The clock starts.
+5. The server keeps the clock: the Table tab shows the level, blinds, ante and time left, each new level starts with
+   the next hand, and chat hears "Blinds go up to 200/400 in 1 minute". Breaks stop the dealing. The owner can pause
+   and resume the clock for everyone.
+6. Stacks are chips, not gil: no buy-ins, rebuys or cash-outs, traded gil doesn't go on stacks, and there's no rake,
+   jackpot cut or bomb pot. A player marked *Away* is still dealt in, posts their blinds and antes, and is folded on
+   their turn.
+7. After each hand the plugin reports the stacks; a player with no chips left is out, and chat says their place
+   ("Aya Ren is out in 5th place."). Players out in the same hand: the one who started it with more chips finishes
+   higher, and the same stack shares the place (and its prize and points).
+8. When one player has all the chips, chat names the winner and the prizes, and the table is a cash table again. The
+   owner's Venue tab shows the results: place, prize, points, with a **Trade** button for each prize and a *Paid*
+   box. Ctrl+click *Cancel tournament* ends it early (refund the entry fees).
+
+The table page shows the tournament above the table: its name, level, blinds and ante, the time to the next level,
+and how many players are left.
+
 ## Live web table (optional)
 
 Players can watch a dealer's table in a browser: seats, stacks, bets, pot and board, updating live. The table

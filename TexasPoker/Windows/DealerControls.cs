@@ -260,8 +260,10 @@ public sealed class DealerControls
             ImGui.Spacing();
         }
 
-        var ready = Table.Seats.Count(s => !s.SittingOut && s.Stack > 0);
-        if (Config.BombPotEnabled)
+        // At a tournament table, players sitting out are dealt in too (and folded), and there are no bomb pots.
+        var tournament = plugin.Tournament.Active;
+        var ready = Table.Seats.Count(s => (tournament || !s.SittingOut) && s.Stack > 0);
+        if (Config.BombPotEnabled && !tournament)
         {
             var bomb = Config.BombPotNext;
             if (ImGui.Checkbox($"Bomb pot ({plugin.BombPotAmount:N0} each)", ref bomb))
@@ -276,7 +278,7 @@ public sealed class DealerControls
 
         ImGui.BeginDisabled(ready < 2);
         var width = compact ? 260 : Math.Max(260, ImGui.GetContentRegionAvail().X);
-        var bombNext = Config.BombPotEnabled && Config.BombPotNext;
+        var bombNext = Config.BombPotEnabled && Config.BombPotNext && !tournament;
         if (ColoredButton(bombNext ? $"Deal hand #{Table.HandNumber + 1}: BOMB POT" : $"Deal hand #{Table.HandNumber + 1}", CallColor,
                           new Vector2(width, compact ? 34 : 46)))
             Do(plugin.DealNextHand);

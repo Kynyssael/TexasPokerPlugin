@@ -38,6 +38,9 @@ public sealed class Seat
 
     public bool InHand { get; internal set; }
 
+    /// <summary>The stack this player started the current (or last) hand with, before blinds and antes.</summary>
+    public long StartingStack { get; internal set; }
+
     public bool Folded { get; internal set; }
 
     public bool AllIn { get; internal set; }

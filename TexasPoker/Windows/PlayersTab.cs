@@ -43,6 +43,18 @@ public sealed class PlayersTab
 
     public void Draw()
     {
+        if (plugin.Tournament.Active)
+        {
+            // A tournament's players are seated by the server's draw and play for chips: no buy-ins or cash-outs.
+            DrawTrades();
+            ImGui.TextColored(DealerControls.Gold, "Tournament table");
+            ImGui.SameLine();
+            ImGui.TextColored(DealerControls.Muted, "Stacks are chips. Players are out when they lose them all; the owner pays the prizes.");
+            ImGui.Spacing();
+            DrawSeats();
+            return;
+        }
+
         DrawTrades();
         DrawAddPlayers();
         ImGui.Spacing();
@@ -404,6 +416,21 @@ public sealed class PlayersTab
 
     public void DrawSeatActions(Seat seat)
     {
+        if (plugin.Tournament.Active)
+        {
+            if (ImGui.Button(seat.SittingOut ? "Back" : "Away", new Vector2(62, 0)))
+            {
+                seat.SittingOut = !seat.SittingOut;
+                plugin.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(seat.SittingOut
+                    ? "They're back: they act for themselves again."
+                    : "They're away: still dealt in, they post their blinds and antes and are folded on their turn.");
+            return;
+        }
+
         var busyInHand = Table.HandInProgress && seat.InHand;
         var rebuy = Config.DefaultBuyIn;
 

@@ -1,0 +1,760 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Numerics;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Dalamud.Bindings.ImGui;
+
+namespace TexasPoker.Windows;
+
+/// <summary>
+/// The Tournaments part of the Venue tab, for an owner with the Tournament License: set a tournament up, register
+/// the players at the start of the event, start it with one of the venue's dealers, watch and pause the clock, and pay
+/// the prizes at the end.
+/// </summary>
+public sealed class TournamentsPanel
+{
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(15);
+
+    private readonly Plugin plugin;
+    private readonly Dictionary<string, Section> sections = new();
+    private readonly Dictionary<string, string> registerText = new();
+    private readonly Dictionary<string, int> dealerPick = new();
+    private Draft? editing;
+    private string editingVenue = string.Empty;
+    private bool busy;
+    private string message = string.Empty;
+    private bool messageIsError;
+
+    public TournamentsPanel(Plugin plugin)
+    {
+        this.plugin = plugin;
+    }
+
+    private static string BaseUrl => WebPublisher.ServerUrl.TrimEnd('/');
+
+    public void Draw(string venueId)
+    {
+        ImGui.PushID($"tour{venueId}");
+        ImGui.TextColored(DealerControls.Gold, "Tournaments");
+        ImGui.SameLine();
+        ImGui.TextColored(DealerControls.Muted, "Tournament License");
+
+        sections.TryGetValue(venueId, out var section);
+        var due = section is null || (section.List.Any(t => t.Status == "running") && DateTime.UtcNow - section.Loaded > RefreshEvery);
+        if (due && !busy)
+            Load(venueId);
+
+        ImGui.TextWrapped("One table of up to 7 players for now. Register the players at the start of the event, once each has " +
+                          "traded you the entry fee. Start closes registration: the server draws the seats, and the dealer you pick " +
+                          "seats them. You pay the prizes at the end.");
+        ImGui.BeginDisabled(busy);
+        if (ImGui.SmallButton("Refresh##tour"))
+            Load(venueId);
+        ImGui.SameLine();
+        if (ImGui.SmallButton("New tournament") && section is not null)
+        {
+            editing = Draft.New(section);
+            editingVenue = venueId;
+        }
+
+        ImGui.EndDisabled();
+        if (busy)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(DealerControls.Muted, "Working...");
+        }
+
+        if (message.Length > 0)
+            ImGui.TextColored(messageIsError ? DealerControls.Red : DealerControls.Good, message);
+
+        if (section is null)
+        {
+            ImGui.PopID();
+            return;
+        }
+
+        if (editing is not null && editingVenue == venueId)
+            DrawEditor(venueId, section, editing);
+
+        if (section.List.Count == 0)
+            ImGui.TextColored(DealerControls.Muted, "No tournaments yet.");
+        foreach (var t in section.List)
+            DrawTournament(venueId, section, t);
+        ImGui.PopID();
+    }
+
+    // ---- one tournament -----------------------------------------------------------------------------
+
+    private void DrawTournament(string venueId, Section section, TournamentView t)
+    {
+        ImGui.PushID(t.Id);
+        var status = t.Status switch
+        {
+            "draft" => $"registering, {t.Entries.Count} player{(t.Entries.Count == 1 ? string.Empty : "s")}",
+            "running" => $"running, {t.PlayersLeft} of {t.Entries.Count} left",
+            "finished" => t.Results.FirstOrDefault() is { } w ? $"finished, won by {w.Name}" : "finished",
+            _ => "cancelled",
+        };
+        var open = t.Status is "draft" or "running" ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None;
+        if (!ImGui.TreeNodeEx($"{t.Name}   ({status})###node", open))
+        {
+            ImGui.PopID();
+            return;
+        }
+
+        var path = $"/api/venue/{venueId}/tournaments/{t.Id}";
+        ImGui.TextColored(DealerControls.Muted,
+                          $"Entry {t.Fee:N0} gil, prize pool {t.PoolNow:N0}{(t.Pool is null ? " (the entry fees)" : string.Empty)}, " +
+                          $"{t.Chips:N0} chips each. Prizes {string.Join(" / ", t.Prizes.Select(p => $"{p}%"))}. " +
+                          $"{t.Levels.Count(l => !l.IsBreak)} levels from {t.Levels.FirstOrDefault()?.Blinds}.");
+
+        switch (t.Status)
+        {
+            case "draft":
+                DrawDraft(venueId, section, t, path);
+                break;
+            case "running":
+                DrawRunning(venueId, t, path);
+                break;
+            default:
+                DrawResults(venueId, t, path);
+                break;
+        }
+
+        if (t.Events.Count > 0 && ImGui.TreeNode("Log##events"))
+        {
+            foreach (var line in t.Events)
+                ImGui.TextColored(DealerControls.Muted, line);
+            ImGui.TreePop();
+        }
+
+        ImGui.TreePop();
+        ImGui.Spacing();
+        ImGui.PopID();
+    }
+
+    private void DrawDraft(string venueId, Section section, TournamentView t, string path)
+    {
+        ImGui.BeginDisabled(busy);
+        if (ImGui.SmallButton("Edit"))
+        {
+            editing = Draft.From(t);
+            editingVenue = venueId;
+        }
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+        if (ImGui.SmallButton("Delete"))
+            Send(venueId, HttpMethod.Delete, path, null, $"Deleted {t.Name}.");
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold Ctrl and click.");
+        ImGui.EndDisabled();
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted($"Registered: {t.Entries.Count} of {section.MaxPlayers}");
+        foreach (var e in t.Entries)
+        {
+            ImGui.PushID(e.Key);
+            ImGui.Bullet();
+            ImGui.SameLine();
+            ImGui.TextUnformatted($"{e.Name}@{e.World}");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(busy || !ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("Remove"))
+                Send(venueId, HttpMethod.Delete, $"{path}/register/{Uri.EscapeDataString(e.Key)}", null,
+                     $"Removed {e.Name}. Refund their entry fee ({t.Fee:N0} gil).");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click. Trade them their entry fee back.");
+            ImGui.PopID();
+        }
+
+        var full = t.Entries.Count >= section.MaxPlayers;
+        var text = registerText.GetValueOrDefault(t.Id, string.Empty);
+        ImGui.BeginDisabled(busy || full);
+        ImGui.SetNextItemWidth(240);
+        var enter = ImGui.InputTextWithHint("##who", "First Last@World", ref text, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+        registerText[t.Id] = text;
+        ImGui.SameLine();
+        if ((ImGui.Button("Register") || enter) && text.Trim().Length > 0)
+        {
+            Register(venueId, t, text.Trim());
+            registerText[t.Id] = string.Empty;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Register my target"))
+        {
+            if (plugin.GetTargetPlayer() is { } target)
+                Register(venueId, t, $"{target.Name}@{target.World}");
+            else
+                Show("Target a player first.", true);
+        }
+
+        ImGui.EndDisabled();
+        ImGui.TextColored(DealerControls.Muted, "Register each player once they've traded you the entry fee.");
+
+        ImGui.Spacing();
+        var pick = Math.Clamp(dealerPick.GetValueOrDefault(t.Id), 0, Math.Max(0, section.Dealers.Count - 1));
+        ImGui.SetNextItemWidth(240);
+        if (ImGui.BeginCombo("Dealer##dealer", section.Dealers.Count > 0 ? section.Dealers[pick].Label : "(none)"))
+        {
+            for (var i = 0; i < section.Dealers.Count; i++)
+            {
+                if (ImGui.Selectable(section.Dealers[i].Label, i == pick))
+                    dealerPick[t.Id] = i;
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(busy || t.Entries.Count < 2 || section.Dealers.Count == 0 || !ImGui.GetIO().KeyCtrl);
+        if (DealerControls.ColoredButton("Start", new Vector4(0.16f, 0.45f, 0.22f, 1f), new Vector2(90, 0)))
+        {
+            var body = JsonContent(new { dealer = section.Dealers[pick].Key });
+            Send(venueId, HttpMethod.Post, $"{path}/start", body,
+                 $"Started {t.Name}. {section.Dealers[pick].Label} sees the drawn players on their Table tab (with the web table on).");
+        }
+
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip(t.Entries.Count < 2
+                ? "Register at least 2 players first."
+                : "Hold Ctrl and click. Registration closes for good, and the server draws the seats.\n" +
+                  "The dealer seats the players from their Table tab; the clock starts then.");
+    }
+
+    private void DrawRunning(string venueId, TournamentView t, string path)
+    {
+        var (index, left, paused, started) = TournamentClient.Advance(t.Levels, t.Clock, t.Received, DateTime.UtcNow);
+        ImGui.TextUnformatted($"Dealt by {t.DealerName}.");
+        ImGui.SameLine();
+        if (!t.Seated)
+            ImGui.TextColored(DealerControls.Gold, "Waiting for the dealer to seat the players.");
+        else if (!started)
+            ImGui.TextColored(DealerControls.Muted, "The clock hasn't started.");
+        else
+        {
+            var level = t.Levels[index];
+            ImGui.TextUnformatted($"{TournamentClient.LevelName(t.Levels, index)}{(level.IsBreak ? string.Empty : $": {level.Blinds}")}");
+            ImGui.SameLine();
+            ImGui.TextColored(paused ? DealerControls.Red : DealerControls.Good, paused ? $"paused, {TournamentClient.Clock(left)} left" : $"{TournamentClient.Clock(left)} left");
+        }
+
+        ImGui.BeginDisabled(busy);
+        if (started)
+        {
+            if (ImGui.Button(paused ? "Resume clock" : "Pause clock"))
+                Send(venueId, HttpMethod.Post, $"{path}/clock", JsonContent(new { @do = paused ? "resume" : "pause" }),
+                     paused ? "The clock runs again." : "The clock is paused for every table.");
+        }
+        else
+        {
+            ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+            if (ImGui.Button("Start the clock"))
+                Send(venueId, HttpMethod.Post, $"{path}/clock", JsonContent(new { @do = "start" }), "The clock is running: level 1.");
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click: start it without waiting for the dealer to seat everyone.");
+        }
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+        if (ImGui.Button("Cancel tournament"))
+            Send(venueId, HttpMethod.Post, $"{path}/cancel", JsonContent(new { }), $"Cancelled {t.Name}. Refund every entry fee.");
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold Ctrl and click. The players leave the table; you refund the entry fees.");
+        ImGui.EndDisabled();
+
+        if (ImGui.BeginTable("##standings", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        {
+            ImGui.TableSetupColumn("Player");
+            ImGui.TableSetupColumn("Chips", ImGuiTableColumnFlags.WidthFixed, 110);
+            ImGui.TableSetupColumn("Place", ImGuiTableColumnFlags.WidthFixed, 90);
+            ImGui.TableHeadersRow();
+            foreach (var e in t.Entries.OrderBy(e => e.Place ?? 0).ThenByDescending(e => e.Chips))
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextColored(e.Place is null ? new Vector4(1, 1, 1, 1) : DealerControls.Muted, $"{e.Name}@{e.World}");
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(e.Place is null ? e.Chips.ToString("N0") : string.Empty);
+                ImGui.TableNextColumn();
+                ImGui.TextColored(DealerControls.Muted, e.Place is { } place ? $"out, {Json.Ordinal(place)}" : string.Empty);
+            }
+
+            ImGui.EndTable();
+        }
+    }
+
+    private void DrawResults(string venueId, TournamentView t, string path)
+    {
+        if (t.Status == "cancelled")
+            ImGui.TextColored(DealerControls.Red, $"Cancelled. Refund each player their entry fee ({t.Fee:N0} gil).");
+
+        if (t.Results.Count > 0 && ImGui.BeginTable("##results", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        {
+            ImGui.TableSetupColumn("Place", ImGuiTableColumnFlags.WidthFixed, 50);
+            ImGui.TableSetupColumn("Player");
+            ImGui.TableSetupColumn("Prize", ImGuiTableColumnFlags.WidthFixed, 110);
+            ImGui.TableSetupColumn("Points", ImGuiTableColumnFlags.WidthFixed, 60);
+            ImGui.TableSetupColumn("##pay", ImGuiTableColumnFlags.WidthFixed, 190);
+            ImGui.TableHeadersRow();
+            foreach (var r in t.Results)
+            {
+                ImGui.PushID(r.Key);
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(Json.Ordinal(r.Place));
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted($"{r.Name}@{r.World}");
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(r.Prize > 0 ? r.Prize.ToString("N0") : "-");
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(r.Points.ToString("0.#"));
+                ImGui.TableNextColumn();
+                if (r.Prize > 0)
+                {
+                    ImGui.BeginDisabled(r.Paid || plugin.TradeOpen);
+                    if (ImGui.SmallButton("Trade"))
+                    {
+                        plugin.Trades.Expect(r.Name, -r.Prize, DateTime.UtcNow);
+                        plugin.TryTradePayout(r.Name, r.Prize);
+                        plugin.Record($"Tournament {t.Name}: paying {r.Name}@{r.World} {r.Prize:N0} gil for {Json.Ordinal(r.Place)} place.");
+                    }
+
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip($"Asks {r.Name} to trade (stand next to them) and types in their prize. You press Trade and Confirm.\n" +
+                                         "Over 1,000,000 goes in parts: the rest waits under Gil to pay on the Players tab.");
+                    ImGui.SameLine();
+                    var paid = r.Paid;
+                    ImGui.BeginDisabled(busy);
+                    if (ImGui.Checkbox("Paid", ref paid))
+                        Send(venueId, HttpMethod.Post, $"{path}/paid", JsonContent(new { key = r.Key, paid }),
+                             paid ? $"{r.Name}'s prize is marked paid." : $"{r.Name}'s prize is marked unpaid.");
+                    ImGui.EndDisabled();
+                }
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
+        ImGui.BeginDisabled(busy || !ImGui.GetIO().KeyCtrl);
+        if (ImGui.SmallButton("Delete"))
+            Send(venueId, HttpMethod.Delete, path, null, $"Deleted {t.Name}.");
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Hold Ctrl and click: remove it and its results.");
+    }
+
+    private void Register(string venueId, TournamentView t, string who)
+    {
+        Send(venueId, HttpMethod.Post, $"/api/venue/{venueId}/tournaments/{t.Id}/register", JsonContent(new { who }), $"Registered {who}.", () =>
+        {
+            // Their entry fee, traded just before: it's for the tournament, not the table.
+            var name = who.Split('@')[0];
+            if (plugin.Trades.Waiting.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && x.Amount == t.Fee) is { } trade)
+            {
+                plugin.Trades.Dismiss(trade);
+                Show($"Registered {who}. Their {t.Fee:N0} gil trade is their entry fee.", false);
+            }
+
+            plugin.Record($"Tournament {t.Name}: registered {who} (entry fee {t.Fee:N0} gil).");
+        });
+    }
+
+    // ---- the setup form -----------------------------------------------------------------------------
+
+    private void DrawEditor(string venueId, Section section, Draft d)
+    {
+        ImGui.Separator();
+        ImGui.TextColored(DealerControls.Gold, d.Id is null ? "New tournament" : $"Edit {d.Name}");
+        ImGui.SetNextItemWidth(260);
+        ImGui.InputText("Name", ref d.Name, 60);
+        ImGui.SetNextItemWidth(140);
+        DealerControls.InputLong("Entry fee (gil)", ref d.Fee);
+        ImGui.Checkbox("Set the prize pool yourself", ref d.OwnPool);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Off: the prize pool is every entry fee added up. On: a pool you pick, for example when the venue adds gil.");
+        if (d.OwnPool)
+        {
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(140);
+            DealerControls.InputLong("##pool", ref d.Pool);
+        }
+
+        ImGui.SetNextItemWidth(140);
+        DealerControls.InputLong("Starting chips", ref d.Chips);
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Blind structure");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(130);
+        var presetName = section.Presets.Count > 0 ? section.Presets[Math.Clamp(d.Preset, 0, section.Presets.Count - 1)].Name : "-";
+        if (ImGui.BeginCombo("##preset", presetName))
+        {
+            for (var i = 0; i < section.Presets.Count; i++)
+            {
+                if (ImGui.Selectable(section.Presets[i].Name, i == d.Preset))
+                    d.Preset = i;
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Use this structure") && section.Presets.Count > 0)
+        {
+            var p = section.Presets[Math.Clamp(d.Preset, 0, section.Presets.Count - 1)];
+            d.Levels = p.Levels.Select(LevelRow.From).ToList();
+            d.Chips = p.Chips;
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Turbo: 8 min levels. Regular: 12 min. Deep: 15 min and 20,000 chips. Antes from level 4. Replaces the levels below.");
+
+        DrawLevels(d);
+
+        ImGui.SetNextItemWidth(260);
+        ImGui.InputText("Prize split (%)", ref d.Prizes, 120);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Percent of the prize pool for 1st, 2nd, 3rd...: they must add up to 100. For example 50, 30, 20.");
+        ImGui.SetNextItemWidth(260);
+        ImGui.InputText("Points by place", ref d.Points, 200);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Points for 1st, 2nd, 3rd...; places after the last one listed get 0.");
+
+        ImGui.BeginDisabled(busy);
+        if (ImGui.Button(d.Id is null ? "Create" : "Save"))
+        {
+            if (d.Body() is { } body)
+            {
+                Send(venueId, HttpMethod.Post, $"/api/venue/{venueId}/tournaments", JsonContent(body),
+                     d.Id is null ? $"Created {d.Name}. Register the players at the start of the event." : $"Saved {d.Name}.",
+                     () => editing = null);
+            }
+            else
+            {
+                Show("The prize split and the points must be numbers separated by commas.", true);
+            }
+        }
+
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel##edit"))
+            editing = null;
+        ImGui.Separator();
+        ImGui.Spacing();
+    }
+
+    private static void DrawLevels(Draft d)
+    {
+        if (!ImGui.BeginTable("##levels", 7, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.ScrollY,
+                              new Vector2(0, Math.Min(260, 30 + d.Levels.Count * 27))))
+            return;
+
+        ImGui.TableSetupScrollFreeze(0, 1);
+        ImGui.TableSetupColumn("Level", ImGuiTableColumnFlags.WidthFixed, 50);
+        ImGui.TableSetupColumn("Break", ImGuiTableColumnFlags.WidthFixed, 45);
+        ImGui.TableSetupColumn("Small blind", ImGuiTableColumnFlags.WidthFixed, 100);
+        ImGui.TableSetupColumn("Big blind", ImGuiTableColumnFlags.WidthFixed, 100);
+        ImGui.TableSetupColumn("Ante", ImGuiTableColumnFlags.WidthFixed, 90);
+        ImGui.TableSetupColumn("Minutes", ImGuiTableColumnFlags.WidthFixed, 80);
+        ImGui.TableSetupColumn("##remove", ImGuiTableColumnFlags.WidthFixed, 60);
+        ImGui.TableHeadersRow();
+
+        var number = 0;
+        var remove = -1;
+        for (var i = 0; i < d.Levels.Count; i++)
+        {
+            var l = d.Levels[i];
+            ImGui.PushID(i);
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted(l.Break ? "-" : $"{++number}");
+            ImGui.TableNextColumn();
+            ImGui.Checkbox("##break", ref l.Break);
+            ImGui.TableNextColumn();
+            if (!l.Break)
+            {
+                ImGui.SetNextItemWidth(-1);
+                DealerControls.InputLong("##sb", ref l.Sb);
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                DealerControls.InputLong("##bb", ref l.Bb);
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                DealerControls.InputLong("##ante", ref l.Ante);
+            }
+            else
+            {
+                ImGui.TextColored(DealerControls.Muted, "Break");
+                ImGui.TableNextColumn();
+                ImGui.TableNextColumn();
+            }
+
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputInt("##min", ref l.Minutes, 0);
+            l.Minutes = Math.Clamp(l.Minutes, 1, 120);
+            ImGui.TableNextColumn();
+            if (ImGui.SmallButton("Remove"))
+                remove = i;
+            ImGui.PopID();
+        }
+
+        ImGui.EndTable();
+        if (remove >= 0)
+            d.Levels.RemoveAt(remove);
+
+        if (ImGui.SmallButton("Add a level"))
+        {
+            var last = d.Levels.LastOrDefault(l => !l.Break);
+            d.Levels.Add(last is null
+                ? new LevelRow { Sb = 50, Bb = 100, Minutes = 12 }
+                : new LevelRow { Sb = last.Sb * 2, Bb = last.Bb * 2, Ante = last.Ante * 2, Minutes = last.Minutes });
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Add a break"))
+            d.Levels.Add(new LevelRow { Break = true, Minutes = 10 });
+    }
+
+    // ---- the server ---------------------------------------------------------------------------------
+
+    private static StringContent JsonContent(object value) => new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
+
+    private void Load(string venueId) => Send(venueId, HttpMethod.Get, $"/api/venue/{venueId}/tournaments", null, null);
+
+    /// <summary>Every reply is the venue's whole Tournaments section, which replaces what's shown.</summary>
+    private void Send(string venueId, HttpMethod method, string path, HttpContent? content, string? success, Action? after = null)
+    {
+        var key = plugin.Configuration.AuthSessionKey;
+        busy = true;
+        _ = Task.Run(async () =>
+        {
+            Section? section = null;
+            string? error = null;
+            try
+            {
+                using var request = new HttpRequestMessage(method, BaseUrl + path);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+                request.Content = content;
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(text);
+                    section = Section.Parse(doc.RootElement);
+                }
+                else
+                {
+                    error = text.Length > 0 ? text : $"The server said {(int)response.StatusCode}.";
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex is JsonException ? "The server sent something this plugin doesn't understand." : $"Can't reach the server: {ex.Message}";
+            }
+
+            await Plugin.Framework.RunOnFrameworkThread(() =>
+            {
+                busy = false;
+                if (section is not null)
+                {
+                    sections[venueId] = section;
+                    if (success is not null)
+                        Show(success, false);
+                    after?.Invoke();
+                }
+                else if (error is not null)
+                {
+                    Show(error, true);
+                    // Don't hammer a server that keeps refusing: wait for the next refresh.
+                    if (!sections.ContainsKey(venueId))
+                        sections[venueId] = new Section([], [], 7, []) { Loaded = DateTime.UtcNow };
+                }
+            }).ConfigureAwait(false);
+        });
+    }
+
+    private void Show(string text, bool error)
+    {
+        message = text;
+        messageIsError = error;
+    }
+
+    // ---- what the server sends ------------------------------------------------------------------------
+
+    private sealed record Section(List<TournamentView> List, List<Preset> Presets, int MaxPlayers, List<(string Key, string Label)> Dealers)
+    {
+        public DateTime Loaded { get; init; } = DateTime.UtcNow;
+
+        public int[] DefaultPrizes { get; init; } = [50, 30, 20];
+
+        public int[] DefaultPoints { get; init; } = [100, 70, 50, 40, 30, 20, 10, 10, 10, 10];
+
+        public static Section Parse(JsonElement root)
+        {
+            var now = DateTime.UtcNow;
+            var list = root.TryGetProperty("tournaments", out var ts) && ts.ValueKind == JsonValueKind.Array
+                ? ts.EnumerateArray().Select(t => TournamentView.Parse(t, now)).ToList()
+                : [];
+            var presets = root.TryGetProperty("presets", out var ps) && ps.ValueKind == JsonValueKind.Array
+                ? ps.EnumerateArray().Select(p => new Preset(Json.Str(p, "name"), Json.Long(p, "chips"),
+                                                               p.TryGetProperty("levels", out var l) ? TournamentLevel.ParseAll(l) : [])).ToList()
+                : [];
+            var dealers = root.TryGetProperty("dealers", out var ds) && ds.ValueKind == JsonValueKind.Array
+                ? ds.EnumerateArray().Select(x => (Json.Str(x, "key"), Json.Str(x, "label"))).ToList()
+                : [];
+            return new Section(list, presets, Math.Max(2, (int)Json.Long(root, "maxPlayers")), dealers)
+            {
+                DefaultPrizes = Ints(root, "prizes") is { Length: > 0 } prizes ? prizes : [50, 30, 20],
+                DefaultPoints = Ints(root, "points") is { Length: > 0 } points ? points : [100, 70, 50, 40, 30, 20, 10, 10, 10, 10],
+            };
+        }
+    }
+
+    private static int[] Ints(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number).Select(x => (int)x.GetDouble()).ToArray()
+            : [];
+
+    private sealed record Preset(string Name, long Chips, List<TournamentLevel> Levels);
+
+    private sealed record Entry(string Key, string Name, string World, long Chips, int? Place);
+
+    private sealed record Result(string Key, string Name, string World, int Place, long Prize, double Points, bool Paid);
+
+    private sealed record TournamentView(
+        string Id, string Name, string Status, long Fee, long? Pool, long PoolNow, long Chips, List<TournamentLevel> Levels,
+        int[] Prizes, int[] Points, string DealerName, bool Seated, List<Entry> Entries, int PlayersLeft, TournamentClock? Clock,
+        List<Result> Results, List<string> Events, DateTime Received)
+    {
+        public static TournamentView Parse(JsonElement t, DateTime now)
+        {
+            var entries = t.TryGetProperty("entries", out var es) && es.ValueKind == JsonValueKind.Array
+                ? es.EnumerateArray().Select(e => new Entry(Json.Str(e, "key"), Json.Str(e, "name"), Json.Str(e, "world"), Json.Long(e, "chips"),
+                                                            e.TryGetProperty("place", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : null)).ToList()
+                : [];
+            var results = t.TryGetProperty("results", out var rs) && rs.ValueKind == JsonValueKind.Array
+                ? rs.EnumerateArray().Select(r => new Result(Json.Str(r, "key"), Json.Str(r, "name"), Json.Str(r, "world"), (int)Json.Long(r, "place"),
+                                                             Json.Long(r, "prize"),
+                                                             r.TryGetProperty("points", out var pts) && pts.ValueKind == JsonValueKind.Number ? pts.GetDouble() : 0,
+                                                             r.TryGetProperty("paid", out var paid) && paid.ValueKind == JsonValueKind.True)).ToList()
+                : [];
+            var events = t.TryGetProperty("events", out var ev) && ev.ValueKind == JsonValueKind.Array
+                ? ev.EnumerateArray().Select(x =>
+                {
+                    var at = DateTimeOffset.FromUnixTimeMilliseconds(Json.Long(x, "at")).ToLocalTime();
+                    return $"{at:MMM d HH:mm}  {Json.Str(x, "text")}";
+                }).Reverse().ToList()
+                : [];
+            return new TournamentView(
+                Json.Str(t, "id"), Json.Str(t, "name"), Json.Str(t, "status"), Json.Long(t, "fee"),
+                t.TryGetProperty("pool", out var pool) && pool.ValueKind == JsonValueKind.Number ? pool.GetInt64() : null,
+                Json.Long(t, "poolNow"), Json.Long(t, "chips"),
+                t.TryGetProperty("levels", out var levels) ? TournamentLevel.ParseAll(levels) : [],
+                Ints(t, "prizes"), Ints(t, "points"), Json.Str(t, "dealerName"),
+                t.TryGetProperty("seated", out var seated) && seated.ValueKind == JsonValueKind.True,
+                entries, (int)Json.Long(t, "playersLeft"),
+                t.TryGetProperty("clock", out var clock) ? TournamentClock.Parse(clock) : null,
+                results, events, now);
+        }
+    }
+
+    private sealed class LevelRow
+    {
+        public long Sb;
+        public long Bb;
+        public long Ante;
+        public int Minutes = 12;
+        public bool Break;
+
+        public static LevelRow From(TournamentLevel l) => new() { Sb = l.SmallBlind, Bb = l.BigBlind, Ante = l.Ante, Minutes = l.Minutes, Break = l.IsBreak };
+    }
+
+    private sealed class Draft
+    {
+        public string? Id;
+        public string Name = string.Empty;
+        public long Fee = 100_000;
+        public bool OwnPool;
+        public long Pool;
+        public long Chips = 10_000;
+        public int Preset = 1;
+        public List<LevelRow> Levels = [];
+        public string Prizes = "50, 30, 20";
+        public string Points = "100, 70, 50, 40, 30, 20, 10, 10, 10, 10";
+
+        public static Draft New(Section section)
+        {
+            var d = new Draft
+            {
+                Name = $"Tournament {DateTime.Now:MMM d}",
+                Prizes = string.Join(", ", section.DefaultPrizes),
+                Points = string.Join(", ", section.DefaultPoints),
+            };
+            var regular = section.Presets.Count > 1 ? section.Presets[1] : section.Presets.FirstOrDefault();
+            if (regular is not null)
+            {
+                d.Levels = regular.Levels.Select(LevelRow.From).ToList();
+                d.Chips = regular.Chips;
+            }
+
+            return d;
+        }
+
+        public static Draft From(TournamentView t) => new()
+        {
+            Id = t.Id, Name = t.Name, Fee = t.Fee, OwnPool = t.Pool is not null, Pool = t.Pool ?? 0, Chips = t.Chips,
+            Levels = t.Levels.Select(LevelRow.From).ToList(), Prizes = string.Join(", ", t.Prizes), Points = string.Join(", ", t.Points),
+        };
+
+        /// <summary>The settings as the server takes them, or null if the prize split or points don't read as numbers.</summary>
+        public object? Body()
+        {
+            static int[]? Numbers(string text)
+            {
+                var parts = text.Split([',', ' ', ';', '/'], StringSplitOptions.RemoveEmptyEntries);
+                var result = new int[parts.Length];
+                for (var i = 0; i < parts.Length; i++)
+                {
+                    if (!int.TryParse(parts[i].TrimEnd('%'), out result[i]))
+                        return null;
+                }
+
+                return result.Length > 0 ? result : null;
+            }
+
+            if (Numbers(Prizes) is not { } prizes || Numbers(Points) is not { } points)
+                return null;
+            return new
+            {
+                id = Id,
+                name = Name.Trim(),
+                fee = Fee,
+                pool = OwnPool ? Pool : (long?)null,
+                chips = Chips,
+                levels = Levels.Select(l => l.Break
+                    ? (object)new { @break = true, minutes = l.Minutes }
+                    : new { sb = l.Sb, bb = l.Bb, ante = l.Ante, minutes = l.Minutes }),
+                prizes,
+                points,
+            };
+        }
+    }
+}

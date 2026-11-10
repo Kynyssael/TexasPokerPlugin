@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.WebTableKey.Length == 0)
             Configuration.WebTableKey = WebPublisher.NewId(32);
         Web = new WebPublisher(this, Framework);
+        Tournament = new TournamentClient(this, Framework);
         Auth = new AuthClient(this, Framework);
         tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished, OnTradeNotice,
                                         () => mainWindow is { IsOpen: true } || dealerBarWindow is { IsOpen: true });
@@ -92,6 +93,9 @@ public sealed class Plugin : IDalamudPlugin
 
     public WebPublisher Web { get; }
 
+    /// <summary>The tournament this table deals, if any (Tournament License).</summary>
+    public TournamentClient Tournament { get; }
+
     /// <summary>XIVAuth sign-in: the dealer tools only work for a signed-in, approved character.</summary>
     public AuthClient Auth { get; }
 
@@ -135,6 +139,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= mainWindow.Toggle;
         windowSystem.RemoveAllWindows();
         tradeWatcher.Dispose();
+        Tournament.Dispose();
         Auth.Dispose();
         Web.Dispose();
         Chat.Dispose();
@@ -142,8 +147,13 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Save()
     {
-        Configuration.SmallBlind = Table.SmallBlind;
-        Configuration.BigBlind = Table.BigBlind;
+        // A tournament's blinds come from its clock: the dealer's own blinds stay for after it.
+        if (!Table.TournamentMode)
+        {
+            Configuration.SmallBlind = Table.SmallBlind;
+            Configuration.BigBlind = Table.BigBlind;
+        }
+
         Configuration.ButtonIndex = Table.ButtonIndex;
         Configuration.HandNumber = Table.HandNumber;
         Configuration.RakePercent = Table.RakePercent;
@@ -224,6 +234,13 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Deals the next hand: a bomb pot if the dealer ticked it (once), otherwise a normal hand.</summary>
     public void DealNextHand()
     {
+        if (Tournament.Active)
+        {
+            Tournament.SetBlindsForHand();
+            Table.StartHand();
+            return;
+        }
+
         var bomb = Configuration.BombPotEnabled && Configuration.BombPotNext;
         Table.StartHand(bomb ? BombPotAmount : 0);
         if (bomb)
@@ -350,7 +367,9 @@ public sealed class Plugin : IDalamudPlugin
     public void TellStacks()
     {
         foreach (var seat in Table.Seats)
-            TellPlayer(seat, $"Your stack: {seat.Stack:N0} gil (bought in {seat.TotalBuyIn:N0}, net {seat.Net:+#,0;-#,0;0}).");
+            TellPlayer(seat, Tournament.Active
+                ? $"Your chips: {seat.Stack:N0}."
+                : $"Your stack: {seat.Stack:N0} gil (bought in {seat.TotalBuyIn:N0}, net {seat.Net:+#,0;-#,0;0}).");
     }
 
     /// <summary>The current target as (name, home world), if it's a player.</summary>
@@ -516,8 +535,9 @@ public sealed class Plugin : IDalamudPlugin
         var result = Trades.Settle(new GilTrade(name, world, amount, DateTime.UtcNow));
         AutoAddedTrade = null;
 
-        // A seated player's extra gil goes straight on their stack (after their hand, if they're in one).
-        if (Configuration.AutoAddTrades &&
+        // A seated player's extra gil goes straight on their stack (after their hand, if they're in one). Not at a
+        // tournament table: its stacks are chips.
+        if (Configuration.AutoAddTrades && !Tournament.Active &&
             Trades.Waiting.LastOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } trade &&
             SeatOf(trade) is { } seat)
         {
@@ -698,6 +718,7 @@ public sealed class Plugin : IDalamudPlugin
         Table.RunItTwice = Configuration.RunItTwice;
         Table.HouseEarnings = Configuration.HouseEarnings;
         Table.JackpotHeld = Configuration.JackpotHeld;
+        Table.TournamentMode = Configuration.TournamentId.Length > 0;
         foreach (var (kind, text) in Configuration.MessageTemplates)
         {
             if (Enum.TryParse<MessageKind>(kind, out var parsed))

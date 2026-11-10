@@ -297,7 +297,8 @@ public sealed class WebPublisher : IDisposable
         if (Table.Street != Street.HandOver || Table.HandNumber == lastReportedHand)
             return;
         lastReportedHand = Table.HandNumber;
-        if (!IsConfigured || Table.LastHandCancelled || (promotions is null && Table.LastJackpotDrop == 0))
+        // Tournament hands play for chips: they don't count for the venue's promotions.
+        if (!IsConfigured || Table.LastHandCancelled || Table.TournamentMode || (promotions is null && Table.LastJackpotDrop == 0))
             return;
         reports.Enqueue((Table.HandNumber, Table.LastJackpotDrop, BuildHandReport()));
     }
@@ -674,6 +675,7 @@ public sealed class WebPublisher : IDisposable
                     // Newer servers answer with the venue's promotions; older ones just say "ok".
                     var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     promotions = VenuePromotions.FromPushAnswer(body);
+                    plugin.Tournament.FromPushAnswer(body);
                     foreach (var seat in PinLocksFromPushAnswer(body))
                         pinLocks.Enqueue(seat);
                 }

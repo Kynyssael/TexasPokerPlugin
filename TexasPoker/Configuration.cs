@@ -203,6 +203,11 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Each player's private link token, by "name@world" in lower case.</summary>
     public Dictionary<string, string> WebTokens { get; set; } = new();
 
+    /// <summary>
+    /// The tournament whose players sit at this table (their stacks are chips, not gil), or empty for a cash table.
+    /// </summary>
+    public string TournamentId { get; set; } = string.Empty;
+
     public int ButtonIndex { get; set; } = -1;
 
     public int HandNumber { get; set; }

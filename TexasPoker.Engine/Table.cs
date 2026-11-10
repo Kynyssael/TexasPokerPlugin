@@ -150,6 +150,15 @@ public sealed class Table
 
     public long BigBlind { get; set; } = 100;
 
+    /// <summary>What every player dealt in puts in before the blinds (tournaments); 0 = no ante.</summary>
+    public long Ante { get; set; }
+
+    /// <summary>
+    /// Tournament rules: no rake, no jackpot cut, no bomb pots, and a player sitting out is still dealt in, posts their
+    /// blinds and antes, and is folded when it's their turn (they "blind out").
+    /// </summary>
+    public bool TournamentMode { get; set; }
+
     public Street Street { get; private set; }
 
     public bool HandInProgress => Street is Street.Preflop or Street.Flop or Street.Turn or Street.River;
@@ -282,15 +291,23 @@ public sealed class Table
             throw new InvalidOperationException("Blinds must satisfy 0 <= small blind <= big blind, big blind > 0.");
         if (bombPot < 0)
             throw new InvalidOperationException("The bomb pot amount can't be negative.");
+        if (bombPot > 0 && TournamentMode)
+            throw new InvalidOperationException("No bomb pots in a tournament.");
+        if (Ante < 0)
+            throw new InvalidOperationException("The ante can't be negative.");
 
-        var eligible = seats.Count(s => !s.SittingOut && s.Stack > 0);
+        bool Dealt(Seat s) => s.Stack > 0 && (TournamentMode || !s.SittingOut);
+        var eligible = seats.Count(Dealt);
         if (eligible < 2)
-            throw new InvalidOperationException("Need at least two players with chips who aren't sitting out.");
+            throw new InvalidOperationException(TournamentMode
+                ? "Need at least two players with chips."
+                : "Need at least two players with chips who aren't sitting out.");
 
         foreach (var seat in seats)
         {
             seat.ResetHand();
-            seat.InHand = !seat.SittingOut && seat.Stack > 0;
+            seat.InHand = Dealt(seat);
+            seat.StartingStack = seat.Stack;
         }
 
         board.Clear();
@@ -330,6 +347,8 @@ public sealed class Table
 
         Announce(MessageKind.HandStart, ("hand", $"{HandNumber}"), ("sb", SmallBlind), ("bb", BigBlind),
                  ("button", seats[ButtonIndex].Name), ("players", $"{eligible}"));
+        if (Ante > 0)
+            PostAntes(eligible);
         PostBlind(seats[SmallBlindIndex], SmallBlind, MessageKind.SmallBlind);
         PostBlind(seats[BigBlindIndex], BigBlind, MessageKind.BigBlind);
         CurrentBet = BigBlind;
@@ -514,6 +533,25 @@ public sealed class Table
     public IReadOnlyList<string> ActorPrompt() =>
         Actor is { } actor ? Messages.Format(PromptKind(actor), PromptValues(actor)) : [];
 
+    /// <summary>
+    /// Everyone dealt in puts in the ante (or all they have). It's dead money: in the pot, but not part of anyone's bet
+    /// this street, so the blinds and calls are on top of it.
+    /// </summary>
+    private void PostAntes(int eligible)
+    {
+        foreach (var seat in seats.Where(s => s.InHand))
+        {
+            var put = Math.Min(Ante, seat.Stack);
+            seat.Stack -= put;
+            seat.Contributed += put;
+            if (seat.Stack == 0)
+                seat.AllIn = true;
+        }
+
+        Announce(MessageKind.Ante, ("amount", Ante), ("pot", Pot), ("players", $"{eligible}"));
+        handActions.Add(new HandAction(Street, lastAnnounced!));
+    }
+
     private void PostBlind(Seat seat, long amount, MessageKind kind)
     {
         var posted = Math.Min(amount, seat.Stack);
@@ -589,6 +627,18 @@ public sealed class Table
         }
 
         var next = NextIndexOrNone(lastIndex, NeedsAction);
+        if (next >= 0 && TournamentMode && seats[next].SittingOut)
+        {
+            var away = seats[next];
+            away.Folded = true;
+            away.HasActed = true;
+            Announce(MessageKind.Fold, ("player", away.Name), ("stack", away.Stack));
+            lastAnnounced += " (sitting out)";
+            handActions.Add(new HandAction(Street, lastAnnounced));
+            ProceedFrom(next);
+            return;
+        }
+
         if (next >= 0)
         {
             ActorIndex = next;
@@ -707,7 +757,7 @@ public sealed class Table
     /// </summary>
     private long TakeRake(long contested)
     {
-        if (RakePercent <= 0 || contested <= 0 || (NoFlopNoDrop && board.Count == 0))
+        if (TournamentMode || RakePercent <= 0 || contested <= 0 || (NoFlopNoDrop && board.Count == 0))
             return 0;
 
         var rake = (long)Math.Floor(contested * RakePercent / 100m);
@@ -726,7 +776,7 @@ public sealed class Table
     {
         var rake = TakeRake(contested);
         long drop = 0;
-        if (JackpotDropPercent > 0 && contested > 0 && board.Count > 0)
+        if (!TournamentMode && JackpotDropPercent > 0 && contested > 0 && board.Count > 0)
         {
             drop = (long)Math.Floor(contested * JackpotDropPercent / 100m);
             if (JackpotDropCap > 0)

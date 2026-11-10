@@ -37,6 +37,7 @@ public sealed class MainWindow : Window
     private Seat? menuSeat;
     private readonly WebTab webTab;
     private readonly VenueTab venueTab;
+    private readonly TournamentBanner tournamentBanner;
     private readonly SignInPanel signInPanel;
     private readonly FileDialogManager logDialog = new();
     private string logStatus = string.Empty;
@@ -52,6 +53,7 @@ public sealed class MainWindow : Window
         playersTab = new PlayersTab(plugin, controls);
         webTab = new WebTab(plugin);
         venueTab = new VenueTab(plugin);
+        tournamentBanner = new TournamentBanner(plugin, controls);
         signInPanel = new SignInPanel(plugin);
         termsPanel = new TermsPanel(plugin);
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(680, 520) };
@@ -179,6 +181,8 @@ public sealed class MainWindow : Window
 
     private void DrawTableTab()
     {
+        tournamentBanner.Draw();
+
         // Trades and the last seating change, so they're seen while dealing.
         playersTab.DrawTrades();
         playersTab.DrawNotice();
@@ -220,10 +224,13 @@ public sealed class MainWindow : Window
         else
         {
             controls.DrawBetweenHands(compact: false);
-            ImGui.Spacing();
-            playersTab.DrawSeatButtons();
-            ImGui.SameLine();
-            ImGui.TextColored(Muted, $"Buy-in {playersTab.BuyIn:N0} (set on the Players tab)");
+            if (!plugin.Tournament.Active)
+            {
+                ImGui.Spacing();
+                playersTab.DrawSeatButtons();
+                ImGui.SameLine();
+                ImGui.TextColored(Muted, $"Buy-in {playersTab.BuyIn:N0} (set on the Players tab)");
+            }
         }
 
         DrawSeatMenu();

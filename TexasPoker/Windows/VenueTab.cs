@@ -50,9 +50,13 @@ public sealed class VenueTab
     /// <summary>Card looks being picked, per venue, until they're saved.</summary>
     private readonly Dictionary<string, CardEdit> cardEdits = new();
 
+    /// <summary>Tournaments, for a venue with the Tournament License.</summary>
+    private readonly TournamentsPanel tournaments;
+
     public VenueTab(Plugin plugin)
     {
         this.plugin = plugin;
+        tournaments = new TournamentsPanel(plugin);
     }
 
     private static string BaseUrl => WebPublisher.ServerUrl.TrimEnd('/');
@@ -219,6 +223,12 @@ public sealed class VenueTab
         DrawCards(venue);
         ImGui.Spacing();
         DrawPromotions(venue);
+        if (venue.TournamentLicense)
+        {
+            ImGui.Spacing();
+            tournaments.Draw(venue.Id);
+        }
+
         ImGui.PopID();
     }
 
@@ -718,13 +728,14 @@ public sealed class VenueTab
             v.TryGetProperty("cards", out var cards),
             cards.ValueKind == JsonValueKind.Object ? CardStyle.Parse(cards) : null,
             v.TryGetProperty("cardBack", out var cardBack) && cardBack.ValueKind == JsonValueKind.String ? cardBack.GetString() : null,
-            v.TryGetProperty("cardBackPending", out var backPending) && backPending.ValueKind == JsonValueKind.True);
+            v.TryGetProperty("cardBackPending", out var backPending) && backPending.ValueKind == JsonValueKind.True,
+            v.TryGetProperty("tournamentLicense", out var tournament) && tournament.ValueKind == JsonValueKind.True);
     }
 
     private sealed record OwnedVenue(
         string Id, string Name, int Seats, int Used, string OwnerName, List<VenueDealer> Dealers, string? Logo, bool LogoPending,
         string Page, Vector3? Felt, Vector3? Accent, OwnerPromotions? Promotions, bool OwnerJackpot,
-        bool CardsSupported, CardStyle? Cards, string? CardBack, bool CardBackPending);
+        bool CardsSupported, CardStyle? Cards, string? CardBack, bool CardBackPending, bool TournamentLicense);
 
     /// <summary>How the venue's cards look on the website, as saved.</summary>
     private sealed record CardStyle(string Face, string Corners, string Font, string Back, Vector3 Colour1, Vector3 Colour2)
