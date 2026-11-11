@@ -212,6 +212,8 @@ public sealed class TournamentClient : IDisposable
     {
         Current = info;
         received = DateTime.UtcNow;
+        if (info is not null)
+            TellDrawn(info);
         if (info is null || !Active || info.Id != Config.TournamentId)
             return;
         AnnounceFeed(info);
@@ -227,6 +229,35 @@ public sealed class TournamentClient : IDisposable
             nextSeatRetry = DateTime.UtcNow + TimeSpan.FromSeconds(15);
             Done(seat, 0);
         }
+    }
+
+    /// <summary>
+    /// The tournament started (or a table was given to this dealer): each player drawn here gets a tell saying which
+    /// table is theirs and to come over, once per draw.
+    /// </summary>
+    private void TellDrawn(TournamentInfo info)
+    {
+        if (Active || info.Status != "running" || info.Instructions.FirstOrDefault(i => i.Kind == "seat") is not { } seat)
+            return;
+        var key = $"{info.Id}:{seat.Id}";
+        if (Config.TournamentToldDraw == key)
+            return;
+        Config.TournamentToldDraw = key;
+        plugin.Save();
+
+        var where = info.Tables > 1 ? $"you're at table {info.TableNo} of {info.Tables}, with me as your dealer" : "you're at my table";
+        var told = 0;
+        foreach (var p in seat.Players)
+        {
+            if (plugin.IsLocalCharacter(p.Name, p.World))
+                continue;
+            var chips = p.Chips > 0 && p.Chips != info.Chips ? $" with your {p.Chips:N0} chips" : string.Empty;
+            plugin.TellTournamentPlayer(p.Name, p.World, $"{info.Name}: {where}. Come to my table and I'll seat you{chips}.");
+            told++;
+        }
+
+        if (told > 0)
+            plugin.Chat.PrintLocal($"Told your {told} player{(told == 1 ? string.Empty : "s")} by tell to come to your table: {string.Join(", ", seat.Players.Select(p => p.Name))}.");
     }
 
     /// <summary>The table chat news from the server (who's out, hand-for-hand, a table breaking), each line once.</summary>

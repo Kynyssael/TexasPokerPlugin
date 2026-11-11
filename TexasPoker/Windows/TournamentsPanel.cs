@@ -376,6 +376,8 @@ public sealed class TournamentsPanel
             ImGui.TextColored(x.Broken ? DealerControls.Muted : x.Waiting ? DealerControls.Gold : new Vector4(1, 1, 1, 1),
                               x.Broken ? "closed" : !x.Seated ? $"{x.Players}, not seated yet" : x.Breaking ? $"{x.Players}, breaking up"
                               : x.Waiting ? $"{x.Players}, waiting (hand-for-hand)" : $"{x.Players}");
+            if (!x.Broken && ImGui.IsItemHovered() && PlayersAt(t, x.No) is { Count: > 0 } here)
+                ImGui.SetTooltip(string.Join("\n", here));
             ImGui.TableNextColumn();
             if (!x.Broken && section is { Dealers.Count: > 0 })
             {
@@ -408,6 +410,28 @@ public sealed class TournamentsPanel
         }
 
         ImGui.EndTable();
+
+        if (ImGui.SmallButton("Copy draw"))
+        {
+            ImGui.SetClipboardText(DrawText(t));
+            Show("Copied who plays at each table: paste it in your Discord or chat.", false);
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Every table with its dealer and players, to post for the players. Each dealer's plugin also tells\n" +
+                             "its players by tell which table is theirs when the tournament starts, and the venue page shows it.");
+    }
+
+    /// <summary>The players still in at a table (as the server last said), by name.</summary>
+    private static List<string> PlayersAt(TournamentView t, int no) =>
+        t.Entries.Where(e => e.Place is null && e.Table == no).Select(e => e.Name).ToList();
+
+    private static string DrawText(TournamentView t)
+    {
+        var lines = new List<string> { $"**{t.Name}**: who plays where" };
+        foreach (var x in t.Tables.Where(x => !x.Broken))
+            lines.Add($"Table {x.No} ({x.DealerName}): {string.Join(", ", PlayersAt(t, x.No))}");
+        return string.Join("\n", lines);
     }
 
     private void DrawResults(string venueId, TournamentView t, string path)

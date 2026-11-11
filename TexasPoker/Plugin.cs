@@ -558,6 +558,10 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Tells a tournament player by /tell which table they move to.</summary>
     public void TellTournamentMove(Seat seat, string message) => TellPlayer(seat, message);
 
+    /// <summary>Tells a tournament player who isn't seated yet (Name@World) where to go.</summary>
+    public void TellTournamentPlayer(string name, string world, string message) =>
+        Chat.Tell(world.Length > 0 ? $"{name}@{world}" : name, message);
+
     /// <summary>Tells the table the dealer has sat down to play, so nobody is surprised by it.</summary>
     public void AnnounceDealerPlaying(Seat seat)
     {

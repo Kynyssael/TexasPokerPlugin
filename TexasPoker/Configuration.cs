@@ -214,6 +214,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The last tournament table news line announced in chat, so none is said twice (after a reload too).</summary>
     public int TournamentFeedSeq { get; set; }
 
+    /// <summary>The draw ("tournament:instruction") whose players were told to come to this table, so they're told once.</summary>
+    public string TournamentToldDraw { get; set; } = string.Empty;
+
     public int ButtonIndex { get; set; } = -1;
 
     public int HandNumber { get; set; }

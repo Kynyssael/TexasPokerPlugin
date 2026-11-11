@@ -201,7 +201,10 @@ one entry each, no rebuys, no late entry.
    `First Last@World`, or *Register my target*). Their fee trade is checked off.
 3. Pick a **dealer for each table** (one table per 7 players: you or the venue's dealers, each a different one;
    dealers don't play) and Ctrl+click **Start**. Registration closes and the server draws the players to tables as
-   evenly as possible (17 players on 3 tables: 6, 6, 5), with a random button at each.
+   evenly as possible (17 players on 3 tables: 6, 6, 5), with a random button at each. **Players find their table**
+   three ways: each dealer's plugin sends its players a /tell ("Spring Cup: you're at table 2 of 3, with me as your
+   dealer. Come to my table and I'll seat you."); the venue page lists every table with its dealer and players; and
+   the owner's *Copy draw* (under the tables) copies the same list to post in Discord.
 4. Each dealer, with the web table on, sees their players at the top of their Table tab and clicks **Seat the
    players** (the table must be empty). The clock starts once every table is seated (or Ctrl+click *Start the
    clock* to start it anyway).
