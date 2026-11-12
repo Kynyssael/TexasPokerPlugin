@@ -151,6 +151,14 @@ public sealed class TournamentClient : IDisposable
     private int posting;
     private DateTime nextSeatRetry = DateTime.MinValue;
 
+    // Between table updates, the plugin asks the server for its tournament now and then, so the owner's changes
+    // (the start and the draw, the clock, moves, a commentator or overlay opening) arrive within seconds.
+    private static readonly TimeSpan PollInTournament = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan PollOtherwise = TimeSpan.FromSeconds(10);
+    private DateTime nextPoll = DateTime.MinValue;
+    private bool polling;
+    private int applied;
+
     public TournamentClient(Plugin plugin, IFramework framework)
     {
         this.plugin = plugin;
@@ -216,6 +224,7 @@ public sealed class TournamentClient : IDisposable
 
     private void Apply(TournamentInfo? info)
     {
+        applied++;
         Current = info;
         received = DateTime.UtcNow;
         if (info is not null)
@@ -476,8 +485,50 @@ public sealed class TournamentClient : IDisposable
 
     // ---- hands -----------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Asks the server for this table's tournament (GET /api/t/&lt;table&gt;/tournament): every few seconds while
+    /// dealing one or offered one, less often otherwise. Not while another call is on its way, and an answer that
+    /// a newer one overtook is dropped, so it never puts back an older state.
+    /// </summary>
+    private void Poll()
+    {
+        if (polling || posting > 0 || reporting || !plugin.Web.IsConfigured || DateTime.UtcNow < nextPoll)
+            return;
+        nextPoll = DateTime.UtcNow + (Active || Current is not null ? PollInTournament : PollOtherwise);
+        polling = true;
+        var url = $"{BaseUrl}/api/t/{Config.WebTableId}/tournament";
+        var session = Config.AuthSessionKey;
+        var since = applied;
+        _ = Task.Run(async () =>
+        {
+            string? answer = null;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session);
+                using var response = await Http.SendAsync(request).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
+                    answer = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                else if ((int)response.StatusCode == 404)
+                    await framework.RunOnFrameworkThread(() => nextPoll = DateTime.UtcNow + TimeSpan.FromMinutes(10)).ConfigureAwait(false); // an older server
+            }
+            catch (Exception)
+            {
+                // Offline for a moment: the next poll (or table update) tries again.
+            }
+
+            await framework.RunOnFrameworkThread(() =>
+            {
+                polling = false;
+                if (answer is not null && applied == since && posting == 0 && !reporting)
+                    FromPushAnswer(answer);
+            }).ConfigureAwait(false);
+        });
+    }
+
     private void OnUpdate(IFramework _)
     {
+        Poll();
         if (!Active)
             return;
 

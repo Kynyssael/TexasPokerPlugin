@@ -19,7 +19,8 @@ namespace TexasPoker.Windows;
 public sealed class TournamentsPanel
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
-    private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(15);
+    // While one of the venue's tournaments runs, the panel reloads this often (moves, chips, who's out).
+    private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(5);
 
     private readonly Plugin plugin;
     private readonly Dictionary<string, Section> sections = new();
