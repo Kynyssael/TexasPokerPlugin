@@ -48,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
         Web = new WebPublisher(this, Framework);
         Tournament = new TournamentClient(this, Framework);
         Auth = new AuthClient(this, Framework);
+        discordLinker = new DiscordLinker(this, Framework);
         tradeWatcher = new TradeWatcher(AddonLifecycle, Framework, ObjectTable, OnTradeFinished, OnTradeNotice,
                                         () => mainWindow is { IsOpen: true } || dealerBarWindow is { IsOpen: true });
         Table.Announced += OnAnnounced;
@@ -95,6 +96,9 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>The tournament this table deals, if any (Tournament License).</summary>
     public TournamentClient Tournament { get; }
+
+    /// <summary>Players' "!link CODE" tells, for the Discord table roles.</summary>
+    private readonly DiscordLinker discordLinker;
 
     /// <summary>XIVAuth sign-in: the dealer tools only work for a signed-in, approved character.</summary>
     public AuthClient Auth { get; }
@@ -617,6 +621,14 @@ public sealed class Plugin : IDalamudPlugin
             (Chat.TakeHiddenEcho(message.Message.TextValue) || (DealerPlaying && IsSecretTell(message.Message.TextValue))))
         {
             message.PreventOriginal();
+            return;
+        }
+
+        // A player linking their Discord for the tournament table roles: "!link CODE", from the link page.
+        if (message.LogKind == XivChatType.TellIncoming && DiscordLinker.CodeIn(message.Message.TextValue) is { } linkCode)
+        {
+            var (linkName, linkWorld) = SenderOf(message.Sender);
+            discordLinker.Link(linkName, linkWorld, linkCode);
             return;
         }
 

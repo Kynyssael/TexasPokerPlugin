@@ -256,6 +256,12 @@ only ever passes ciphertext on. The chip counts, players left and results keep t
 hand away before it plays (the last hand plays, then the winner shows). If the commentary is streamed, give the stream
 its own delay too.
 
+**Discord table roles.** If your venue is the one set up on the Eorzean Poker Discord server, players who linked
+their Discord get their table's role there during tournaments (it opens the table's voice channel), and lose it when
+they move or go out. Players link once at `eorzeanpoker.app/discord`: they sign in with Discord, then `/tell` any
+dealer the code it shows, `!link CODE`. Your plugin links them by itself and tells them back; you only need to be
+signed in.
+
 **Stream overlay.** Under the commentator link, *Stream overlay* makes a second link (`eorzeanpoker.app/o/...#code`)
 for a streamer: in OBS, add a *Browser* source, paste the link as its URL and set it to 1920 x 1080. Over their stream
 it shows the tournament bar (level, blinds, clock, players left), the feature table (board, pot, each player's cards,
