@@ -69,6 +69,9 @@ public sealed record TournamentInfo(
     /// <summary>The commentator browser's public key, while the commentator view is on and open: seal updates to it.</summary>
     public string? CommentatorKey { get; init; }
 
+    /// <summary>The stream overlay browser's public key, while it's open: seal each update to it too.</summary>
+    public string? OverlayKey { get; init; }
+
     public static TournamentInfo? Parse(JsonElement t)
     {
         if (t.ValueKind != JsonValueKind.Object)
@@ -102,6 +105,9 @@ public sealed record TournamentInfo(
         {
             CommentatorKey = t.TryGetProperty("commentator", out var c) && c.ValueKind == JsonValueKind.Object && Json.Str(c, "pub") is { Length: > 0 } pub
                 ? pub
+                : null,
+            OverlayKey = t.TryGetProperty("commentator", out var o) && o.ValueKind == JsonValueKind.Object && Json.Str(o, "overlay") is { Length: > 0 } overlay
+                ? overlay
                 : null,
         };
     }
@@ -507,24 +513,36 @@ public sealed class TournamentClient : IDisposable
     /// </summary>
     private void SendCommentary()
     {
-        if (Current is not { Status: "running", CommentatorKey: { } key } t || t.Id != Config.TournamentId)
+        if (Current is not { Status: "running" } t || t.Id != Config.TournamentId || (t.CommentatorKey is null && t.OverlayKey is null))
             return;
-        var state = $"{Table.Sequence}|{Table.HandNumber}|{Table.Street}|{string.Join(",", Table.Seats.Select(s => $"{s.Name}:{s.Stack}:{s.SittingOut}"))}";
+        // The keys too: a browser that just opened gets the table as it is now, without waiting for the next action.
+        var state = $"{Table.Sequence}|{Table.HandNumber}|{Table.Street}|{string.Join(",", Table.Seats.Select(s => $"{s.Name}:{s.Stack}:{s.SittingOut}"))}|{t.CommentatorKey}|{t.OverlayKey}";
         if (state == lastCommentary)
             return;
         lastCommentary = state;
 
-        string sealedText;
-        try
+        // Sealed once for each browser that's open: the commentator's and the stream overlay's (each has its own key).
+        var plain = CommentaryJson(t);
+        static string? SealTo(string? key, string plain)
         {
-            sealedText = CommentatorSealer.Seal(key, CommentaryJson(t));
-        }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
-        {
-            return; // not a key this can seal to
+            if (key is null)
+                return null;
+            try
+            {
+                return CommentatorSealer.Seal(key, plain);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
+            {
+                return null; // not a key this can seal to
+            }
         }
 
-        var json = JsonSerializer.Serialize(new { t = t.Id, hand = Table.HandNumber, over = !Table.HandInProgress, c = sealedText });
+        var sealedText = SealTo(t.CommentatorKey, plain);
+        var overlayText = SealTo(t.OverlayKey, plain);
+        if (sealedText is null && overlayText is null)
+            return;
+
+        var json = JsonSerializer.Serialize(new { t = t.Id, hand = Table.HandNumber, over = !Table.HandInProgress, c = sealedText, o = overlayText });
         if (sendingCommentary)
             queuedCommentary = json;
         else

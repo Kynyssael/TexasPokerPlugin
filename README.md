@@ -256,6 +256,16 @@ only ever passes ciphertext on. The chip counts, players left and results keep t
 hand away before it plays (the last hand plays, then the winner shows). If the commentary is streamed, give the stream
 its own delay too.
 
+**Stream overlay.** Under the commentator link, *Stream overlay* makes a second link (`eorzeanpoker.app/o/...#code`)
+for a streamer: in OBS, add a *Browser* source, paste the link as its URL and set it to 1920 x 1080. Over their stream
+it shows the tournament bar (level, blinds, clock, players left), the feature table (board, pot, each player's cards,
+stack and chance to win), the top 8 chip stacks, and pop-ups when a player is out, at the final table and for the
+winner, all on the same delay as the commentator view. Its background is see-through. Like the commentator link, it
+opens in one browser only, so paste it straight into OBS (opening it in a normal browser first uses it up); Ctrl+click
+*New link* if it leaks. Add `?show=bar,table,leaders,events` before the `#` to show only some parts (for example
+`?show=bar,leaders`), or `?table=2` to always show table 2. Every dealer needs this version or newer for the overlay
+to show their table.
+
 While it runs, the owner sees each table with its dealer and players, the moves in progress, and every player's
 table and chips. The table page shows the tournament above the table: its name, the table number, level, blinds and
 ante, the time to the next level, how many players are left, and hand-for-hand.

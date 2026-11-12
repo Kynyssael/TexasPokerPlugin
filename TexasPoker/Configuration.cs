@@ -211,6 +211,9 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>The owner's commentator link tokens, by tournament id (the server only knows a hash of each).</summary>
     public Dictionary<string, string> CommentatorTokens { get; set; } = new();
 
+    /// <summary>The owner's stream overlay link tokens, by tournament id (a second link, for a streamer's OBS).</summary>
+    public Dictionary<string, string> OverlayTokens { get; set; } = new();
+
     /// <summary>The last tournament table news line announced in chat, so none is said twice (after a reload too).</summary>
     public int TournamentFeedSeq { get; set; }
 

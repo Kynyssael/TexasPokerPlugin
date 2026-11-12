@@ -560,6 +560,7 @@ public sealed class TournamentsPanel
         ImGui.EndDisabled();
         ImGui.SameLine();
         ImGui.TextColored(DealerControls.Muted, t.Delay < 0 ? "(after each hand)" : $"({t.Delay} min behind)");
+        DrawOverlay(venueId, t, path);
 
         var open = t.Tables.Where(x => !x.Broken).ToList();
         if (t.Status == "running" && open.Count > 1)
@@ -582,6 +583,59 @@ public sealed class TournamentsPanel
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("The table the commentator view shows first. The caster can still pick another.");
         }
+    }
+
+    /// <summary>
+    /// The stream overlay link: the commentator view made for a streamer's OBS (a browser source), with the same
+    /// delay. A second link with its own key, so it can be given out (or replaced) apart from the commentator's.
+    /// </summary>
+    private void DrawOverlay(string venueId, TournamentView t, string path)
+    {
+        ImGui.TextColored(DealerControls.Gold, "Stream overlay");
+        ImGui.SameLine();
+        var token = plugin.Configuration.OverlayTokens.GetValueOrDefault(t.Id);
+        ImGui.BeginDisabled(busy);
+        if (!t.OverlayLinked || token is null)
+        {
+            if (ImGui.SmallButton(t.OverlayLinked ? "Make a new link (this PC has lost it)##overlay" : "Make the link##overlay"))
+                NewOverlayLink(venueId, t, path);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("A link for a streamer's OBS: the feature table, the clock and the chip leaders over their stream, with the same delay.");
+        }
+        else
+        {
+            if (ImGui.SmallButton("Copy link##overlay"))
+            {
+                ImGui.SetClipboardText($"{BaseUrl}/o/{t.Id}#{token}");
+                Show("Copied the overlay link. In OBS: add a Browser source, paste it as the URL, 1920 x 1080. It opens in one browser only, so paste it straight into OBS.", false);
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("For OBS: a Browser source, 1920 x 1080. Opening it in a normal browser first uses it up (it opens in one only).\n" +
+                                 "Add ?show=bar,table,leaders,events before the # to pick the parts, or ?table=2 to always show one table.");
+            ImGui.SameLine();
+            ImGui.BeginDisabled(!ImGui.GetIO().KeyCtrl);
+            if (ImGui.SmallButton("New link##overlay"))
+                NewOverlayLink(venueId, t, path);
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Hold Ctrl and click: the old overlay link stops working at once (it leaked, or the streamer changes PC).");
+            ImGui.SameLine();
+            ImGui.TextColored(DealerControls.Muted, t.OverlayOpened ? "opened in a browser" : "not opened yet");
+        }
+
+        ImGui.EndDisabled();
+    }
+
+    private void NewOverlayLink(string venueId, TournamentView t, string path)
+    {
+        var token = WebPublisher.NewId(24);
+        Send(venueId, HttpMethod.Post, $"{path}/commentator", JsonContent(new { lookup = TexasPoker.Engine.CommentatorSealer.Lookup(t.Id, token), overlay = true }),
+             "Made a new overlay link. Copy it for the streamer; the old one stopped working.", () =>
+             {
+                 plugin.Configuration.OverlayTokens[t.Id] = token;
+                 plugin.Save();
+             });
     }
 
     private void NewCommentatorLink(string venueId, TournamentView t, string path)
@@ -1034,6 +1088,10 @@ public sealed class TournamentsPanel
 
         public bool CommentatorOpened { get; init; }
 
+        public bool OverlayLinked { get; init; }
+
+        public bool OverlayOpened { get; init; }
+
         public int? Feature { get; init; }
 
         public int Delay { get; init; } = 2;
@@ -1084,6 +1142,8 @@ public sealed class TournamentsPanel
                 CommentatorOn = t.TryGetProperty("commentator", out var cm) && True(cm, "on"),
                 CommentatorLinked = t.TryGetProperty("commentator", out var cl) && True(cl, "linked"),
                 CommentatorOpened = t.TryGetProperty("commentator", out var co) && True(co, "opened"),
+                OverlayLinked = t.TryGetProperty("commentator", out var ol) && True(ol, "overlayLinked"),
+                OverlayOpened = t.TryGetProperty("commentator", out var oo) && True(oo, "overlayOpened"),
                 Feature = t.TryGetProperty("commentator", out var cf) && cf.TryGetProperty("feature", out var fv) && fv.ValueKind == JsonValueKind.Number ? fv.GetInt32() : null,
                 Delay = (int)Json.Long(t, "delay"),
             };
