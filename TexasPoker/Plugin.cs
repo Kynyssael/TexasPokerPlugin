@@ -637,8 +637,10 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        // A player linking their Discord for the tournament table roles: "!link CODE", from the link page.
-        if (message.LogKind == XivChatType.TellIncoming && DiscordLinker.CodeIn(message.Message.TextValue) is { } linkCode)
+        // A player linking their Discord for the tournament table roles: "!link CODE", from the link page. Only heard
+        // by dealers of the venue set up for the roles; anywhere else such a tell is just a tell.
+        if (message.LogKind == XivChatType.TellIncoming && Auth.Venues.Any(v => v.Discord) &&
+            DiscordLinker.CodeIn(message.Message.TextValue) is { } linkCode)
         {
             var (linkName, linkWorld) = SenderOf(message.Sender);
             discordLinker.Link(linkName, linkWorld, linkCode);

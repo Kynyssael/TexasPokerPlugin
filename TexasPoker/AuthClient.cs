@@ -287,7 +287,8 @@ public sealed class AuthClient : IDisposable
                             v.GetProperty("name").GetString() ?? string.Empty,
                             v.TryGetProperty("isOwner", out var owner) && owner.ValueKind == JsonValueKind.True,
                             v.TryGetProperty("ownerName", out var ownerName) ? ownerName.GetString() ?? string.Empty : string.Empty,
-                            v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty));
+                            v.TryGetProperty("page", out var page) ? page.GetString() ?? string.Empty : string.Empty,
+                            v.TryGetProperty("discord", out var discord) && discord.ValueKind == JsonValueKind.True));
                     }
                 }
 
@@ -344,5 +345,8 @@ public sealed class AuthClient : IDisposable
 }
 
 /// <summary>A venue license the signed-in character holds a seat in.</summary>
-/// <summary>A venue the dealer owns or deals for. <see cref="Page"/> is its public page's path, e.g. "/v/primal-den".</summary>
-public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName, string Page);
+/// <summary>
+/// A venue the dealer owns or deals for. <see cref="Page"/> is its public page's path, e.g. "/v/primal-den".
+/// <see cref="Discord"/>: the venue set up for the Discord table roles, where players link with "!link CODE" tells.
+/// </summary>
+public sealed record VenueMembership(string Id, string Name, bool IsOwner, string OwnerName, string Page, bool Discord = false);
