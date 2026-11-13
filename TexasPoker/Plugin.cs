@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Dalamud.Game.Chat;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -40,7 +41,7 @@ public sealed class Plugin : IDalamudPlugin
         Log.Resume(Configuration.SessionLogFile, DateTime.Now);
         Configuration.SessionLogFile = Log.FilePath ?? string.Empty;
 
-        Chat = new ChatSender(Framework, ChatGui, Configuration);
+        Chat = new ChatSender(Framework, ChatGui, Configuration, CanSendChat);
         if (Configuration.WebTableId.Length == 0)
             Configuration.WebTableId = WebPublisher.NewId(6);
         if (Configuration.WebTableKey.Length == 0)
@@ -85,6 +86,18 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
+
+    /// <summary>
+    /// Whether the game can take chat input now: logged in and in a zone, not loading one, logging out, or in a
+    /// cutscene. Sending chat on the title screen or a loading screen can crash the game, and the plugin now sends
+    /// some tells by itself (a tournament's draw, a Discord link's answer), so they wait for a safe moment.
+    /// </summary>
+    private static bool CanSendChat() =>
+        ObjectTable.LocalPlayer is not null &&
+        !Condition[ConditionFlag.BetweenAreas] && !Condition[ConditionFlag.BetweenAreas51] &&
+        !Condition[ConditionFlag.LoggingOut] && !Condition[ConditionFlag.OccupiedInCutSceneEvent] &&
+        !Condition[ConditionFlag.WatchingCutscene] && !Condition[ConditionFlag.WatchingCutscene78];
 
     public Configuration Configuration { get; }
 

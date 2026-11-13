@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -20,6 +22,10 @@ public sealed partial class DiscordLinker
 
     private readonly Plugin plugin;
     private readonly IFramework framework;
+
+    // One link try per player every few seconds: someone spamming "!link" tells gets no flood of answers.
+    private static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(10);
+    private readonly Dictionary<string, DateTime> lastTry = new(StringComparer.OrdinalIgnoreCase);
 
     public DiscordLinker(Plugin plugin, IFramework framework)
     {
@@ -48,6 +54,14 @@ public sealed partial class DiscordLinker
             plugin.Chat.PrintLocal($"{name} sent a Discord link code, but the game didn't say their world. Ask them to send it again.");
             return;
         }
+
+        var who = $"{name}@{world}";
+        var now = DateTime.UtcNow;
+        if (lastTry.TryGetValue(who, out var last) && now - last < Cooldown)
+            return;
+        foreach (var old in lastTry.Where(e => now - e.Value >= Cooldown).Select(e => e.Key).ToList())
+            lastTry.Remove(old);
+        lastTry[who] = now;
 
         var url = $"{WebPublisher.ServerUrl.TrimEnd('/')}/api/discord/link";
         var session = plugin.Configuration.AuthSessionKey;

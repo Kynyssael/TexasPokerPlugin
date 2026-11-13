@@ -18,18 +18,23 @@ public sealed class ChatSender : IDisposable
     // The game rejects chat input over 500 bytes; leave room for the command prefix.
     private const int MaxMessageBytes = 440;
 
+    // A whole chat input over 500 bytes can crash the game: every command (tells too) is cut to fit.
+    private const int MaxCommandBytes = 490;
+
     private readonly IFramework framework;
     private readonly IChatGui chatGui;
     private readonly Configuration config;
     private readonly ConcurrentQueue<string> queue = new();
+    private readonly Func<bool> canSend;
 
     // Tells whose echo in the dealer's own chat is hidden (hole cards while the dealer plays), with when they
     // were queued. The game shows every tell you send as ">> Name: text"; this is how that line is caught.
     private readonly ConcurrentDictionary<string, DateTime> hiddenEchoes = new();
     private DateTime nextSend = DateTime.MinValue;
 
-    public ChatSender(IFramework framework, IChatGui chatGui, Configuration config)
+    public ChatSender(IFramework framework, IChatGui chatGui, Configuration config, Func<bool> canSend)
     {
+        this.canSend = canSend;
         this.framework = framework;
         this.chatGui = chatGui;
         this.config = config;
@@ -74,7 +79,9 @@ public sealed class ChatSender : IDisposable
     // The game may adjust spacing, so the match ignores whitespace.
     private static string Key(string text) => new(text.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
-    private static string Clean(string text) => new string(text.Where(c => !char.IsControl(c)).ToArray()).Trim();
+    // No control characters, and nothing outside the basic plane (emoji, say, from a Discord name): the game's chat
+    // can't show them, and they're not worth the risk in input the game parses.
+    private static string Clean(string text) => new string(text.Where(c => !char.IsControl(c) && !char.IsSurrogate(c)).ToArray()).Trim();
 
     /// <summary>Queues an /echo: shown (and any &lt;se.N&gt; played) in the dealer's own chat only.</summary>
     public void Echo(string message) => Enqueue($"/echo {message}");
@@ -87,13 +94,16 @@ public sealed class ChatSender : IDisposable
     private void Enqueue(string command)
     {
         var clean = Clean(command);
+        while (Encoding.UTF8.GetByteCount(clean) > MaxCommandBytes)
+            clean = clean[..^1];
         if (clean.Length > 1)
             queue.Enqueue(clean);
     }
 
     private void OnUpdate(IFramework _)
     {
-        if (DateTime.UtcNow < nextSend || !queue.TryDequeue(out var command))
+        // Held (not dropped) on the title screen, a loading screen or in a cutscene: sent once the game can take them.
+        if (DateTime.UtcNow < nextSend || queue.IsEmpty || !canSend() || !queue.TryDequeue(out var command))
             return;
 
         nextSend = DateTime.UtcNow.AddMilliseconds(Math.Max(500, config.MessageDelayMs));

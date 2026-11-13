@@ -254,6 +254,9 @@ public sealed class TournamentClient : IDisposable
     {
         if (Active || info.Status != "running" || info.Instructions.FirstOrDefault(i => i.Kind == "seat") is not { } seat)
             return;
+        // Not from the title screen: the tells wait (the next answer tries again) until a character is logged in.
+        if (plugin.LocalCharacter is null)
+            return;
         var key = $"{info.Id}:{seat.Id}";
         if (Config.TournamentToldDraw == key)
             return;
